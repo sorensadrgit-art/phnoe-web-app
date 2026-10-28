@@ -3,6 +3,7 @@ import MotionApp from './MotionApp.jsx';
 import EvidencePassport from './EvidencePassport.jsx';
 import GuidedCaptureWizard from './GuidedCaptureWizard.jsx';
 import ReportStudio from './ReportStudio.jsx';
+import LiveTrackerStudio from './LiveTrackerStudio.jsx';
 import {NAV_ITEMS,STAGES,formatSession,roleStatus,apiSessionPath,readAccessToken} from './unifiedModel.js';
 
 const API='/api/v1';
@@ -13,7 +14,7 @@ const ROLE_NAMES={
  cam01_trial:'Phone · Movement trial',cam02_trial:'Webcam · Movement trial',
 };
 const NAV_SIGNS={
- overview:'◈',sessions:'▦',capture:'◉',processing:'◎',motion:'◇',analysis:'⌁',reports:'▤',diagnostics:'⚙',
+ overview:'◈',live:'⚡',sessions:'▦',capture:'◉',processing:'◎',motion:'◇',analysis:'⌁',reports:'▤',diagnostics:'⚙',
 };
 const dateMeta='Prototype / research only • Physical measurement accuracy unverified';
 
@@ -317,11 +318,11 @@ export default function UnifiedApp(){
     <span>Motion Analysis Studio</span></div></div>
    <div className="uw-sidebar-group">WORKSPACE</div>
    <nav aria-label="KineLab views">{NAV_ITEMS.map(item=><button
-    key={item.id} type="button" className={'uw-nav-link '+(view===item.id?'is-active':'')}
+    key={item.id} type="button" className={'uw-nav-link '+(view===item.id?'is-active':'')+(item.id==='live'?' is-live-link':'')}
     aria-current={view===item.id?'page':undefined}
     onClick={()=>{setView(item.id);if(item.id==='diagnostics'&&selected)fetchRecovery()}}>
     <span className="uw-nav-icon" aria-hidden="true">{NAV_SIGNS[item.id]}</span>
-    <span>{item.label}<small>{item.description}</small></span>
+    <span>{item.label}{item.id==='live'&&<span className="uw-nav-live-dot">LIVE</span>}<small>{item.description}</small></span>
    </button>)}</nav>
    <div className="uw-sidebar-bottom">
     <span className="uw-online-dot"/> LOCAL SYSTEM <strong>ONLINE</strong>
@@ -389,6 +390,15 @@ export default function UnifiedApp(){
        </Box>
       </div>
      </>}
+
+     {view==='live'&&<LiveTrackerStudio
+       token={activeToken}
+       onSessionCreated={sid=>{
+         refreshSessions();
+         setSelected(sid);
+         show('Live session recorded and selected: ' + sid, 'info');
+       }}
+     />}
 
      {view==='sessions'&&<>
       <div className="uw-two">

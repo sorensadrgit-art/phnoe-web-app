@@ -4,12 +4,18 @@ import {NAV_ITEMS,formatSession,roleStatus,apiSessionPath,
         readAccessToken,STAGES,tabFromHash,PASSPORT_GATES,
         gateIndex,isGatePassed,shortHash,formatBytes} from './unifiedModel.js';
 
-test('T6 navigation covers capture, sessions, process, motion, analysis, reports and diagnostics',()=>{
+test('T6 navigation covers live, capture, sessions, process, motion, analysis, reports and diagnostics',()=>{
  assert.deepEqual(NAV_ITEMS.map(x=>x.id),
-  ['overview','sessions','capture','processing','motion','analysis','reports','diagnostics']);
+  ['overview','live','sessions','capture','processing','motion','analysis','reports','diagnostics']);
  assert.ok(NAV_ITEMS.every(x=>x.label&&x.description));
  assert.deepEqual(STAGES.map(s=>s.id),
   ['normalize','calibrate_pose','reconstruct','export_markers']);
+});
+test('live sessions display LIVE SET badge and registration disabled',()=>{
+ const session={id:'live-squat-01',kind:'live',status:'completed',captured_roles:0,can_register:false};
+ const row=formatSession(session);
+ assert.equal(row.badge,'LIVE SET');
+ assert.equal(row.actionAvailable,false);
 });
 test('test-only sessions never display registration as available',()=>{
  const session={id:'caliscope-walking-test-20261027',kind:'test-only',

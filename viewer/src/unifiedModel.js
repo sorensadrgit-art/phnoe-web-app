@@ -1,6 +1,7 @@
 /** KineLab unified workspace view and rendering contracts (pure, testable). */
 export const NAV_ITEMS=[
  {id:'overview',label:'Overview',description:'Workspace and current session'},
+ {id:'live',label:'Live Tracker',description:'Real-time biofeedback and form coach'},
  {id:'sessions',label:'Sessions',description:'Manage local captures'},
  {id:'capture',label:'Capture',description:'Phone and webcam footage'},
  {id:'processing',label:'Process',description:'Native stage gates'},
@@ -18,6 +19,7 @@ export const STAGES=[
 export function formatSession(info){
  const kind=info?.kind??'unknown',status=info?.status??'unknown';
  const badge=kind==='test-only'?'TEST ONLY':
+   kind==='live'?'LIVE SET':
    status==='registered'?'REGISTERED':
    status==='draft'?'DRAFT':status.toUpperCase();
  return {

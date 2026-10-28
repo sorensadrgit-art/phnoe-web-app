@@ -14,6 +14,7 @@
 | **G7** | Accessibility, UX & Performance Hardening | **PASS** | WCAG 2.1 AA focus-visible outlines, contrast compliance, `@media (prefers-reduced-motion: reduce)`, Vite production bundle under 1.2 MB gzipped to 335 KB, instant localhost reuse. |
 | **G8** | Private Feature Branch Staging & PR | **PASS** | Vetted source code staged to private repository `phnoe-web-app` on feature branch `feature/kinelab-v1-finalization`. Zero PHI, zero video binaries, zero tokens in Git. |
 | **G9** | Source Media Verification & Truthful Status | **PASS** | Source media hashes verified unchanged (`cam02_board.mp4`, `cam02_trial.mp4`). Truthful status declaration: `SOFTWARE_BUILD_VERIFIED`, `BLOCKED_ON_PHYSICAL_EVIDENCE`, `CLINICAL_VALIDATION: UNVERIFIED`. |
+| **G10** | Live Tracker Studio & Real-Time Biofeedback | **PASS** | Interactive camera-first studio (`LiveTrackerStudio.jsx`), pure kinematics engine (`liveKinematics.js`), exercise finite state machine (`exerciseStateMachine.js`), high-contrast HUD overlay (`LiveHUDOverlay.jsx`), Three.js 3D digital twin avatar (`LiveDigitalTwin.jsx`), set summary modal (`LiveSetSummaryModal.jsx`), backend ingestion API (`/api/v1/sessions/live-set` and `/api/v1/exercises/presets`), and SQLite `.motion.json` persistence. 43/43 JS tests and 230/230 Python tests pass. |
 
 ---
 
@@ -48,3 +49,13 @@
 - [x] Single desktop shortcut `KineLab PT.lnk` consolidated on Desktop.
 - [x] Offline distribution bundle built with zero external internet requirements.
 - [x] Clean machine installation procedure documented in `docs/CLEAN_INSTALL_REPORT.md`.
+
+### Gate 6: Live Tracker Studio & Real-Time Biofeedback
+- [x] Pure mathematical kinematics engine with angle calculations, valgus, and bilateral symmetry (`liveKinematics.js`).
+- [x] Exercise finite state machine supporting Squats, Lunges, Knee Extension, and Single-Leg Balance with hysteresis (`exerciseStateMachine.js`).
+- [x] Form fault detection for INSUFFICIENT_DEPTH, KNEE_VALGUS, EXCESSIVE_TRUNK_LEAN, and ASYMMETRIC_LOAD.
+- [x] High-contrast canvas HUD overlay with real-time angle badges, arc depth gauge, and jumbo rep counter (`LiveHUDOverlay.jsx`).
+- [x] Real-time Three.js 3D skeleton digital twin mirroring live movement with OrbitControls (`LiveDigitalTwin.jsx`).
+- [x] Completed set summary modal with rep telemetry breakdown and one-click session save (`LiveSetSummaryModal.jsx`).
+- [x] Backend ingestion endpoints `/api/v1/exercises/presets` and `/api/v1/sessions/live-set` with SQLite index and `.motion.json` persistence.
+

@@ -101,11 +101,14 @@ class SessionLibrary:
             kind, status = "test-only", "test-only"
         elif registered:
             kind = recorded.get("kind", "unknown") if recorded else "unknown"
-            try:
-                validated = load_session(path)
-                kind, status = validated["kind"], "registered"
-            except (ValueError, OSError):
-                status = "invalid"
+            if kind == "live":
+                status = recorded.get("status", "completed")
+            else:
+                try:
+                    validated = load_session(path)
+                    kind, status = validated["kind"], "registered"
+                except (ValueError, OSError):
+                    status = "invalid"
         elif template is not None:
             kind, status = template.get("kind", "unknown"), "draft"
         else:

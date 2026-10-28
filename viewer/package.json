@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test src/motionData.test.js src/syncPlayback.test.js src/unifiedLogic.test.js src/unifiedModel.test.js"
+    "test": "node --test src/motionData.test.js src/syncPlayback.test.js src/unifiedLogic.test.js src/unifiedModel.test.js src/liveKinematics.test.js src/exerciseStateMachine.test.js"
   },
   "dependencies": {
     "react": "^19.2.0",

@@ -226,6 +226,8 @@ def make_server(service: IntegratedService, *, token: str, dist: Path = DIST,
                     self._json(200, service.analysis())
                 elif path == "/api/v1/backups":
                     self._json(200, {"backups": service.backups()})
+                elif parts == ["api", "v1", "exercises", "presets"] or path == "/api/v1/exercises/presets":
+                    self._json(200, service.get_exercise_presets())
                 elif parts == ["api", "v1", "compare"]:
                     params = parse_qs(url.query)
                     s1 = params.get("s1", [None])[0]
@@ -334,6 +336,9 @@ def make_server(service: IntegratedService, *, token: str, dist: Path = DIST,
                     return
                 if len(parts) == 3 and parts[:3] == ["api", "v1", "sessions"]:
                     self._json(201, service.create_session(data.get("id"), kind=data.get("kind", "real")))
+                    return
+                if parts == ["api", "v1", "sessions", "live-set"]:
+                    self._json(201, service.save_live_session(data))
                     return
                 if len(parts) == 6 and parts[4] == "reports" and parts[5] == "generate":
                     self._json(201, service.generate_reports(parts[3], confirm=confirmed))
