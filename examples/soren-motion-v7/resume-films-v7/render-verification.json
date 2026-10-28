@@ -1,0 +1,86 @@
+[
+  {
+    "section": "about",
+    "bytes": 910904,
+    "duration": 8,
+    "fps": 30,
+    "size": [
+      1200,
+      704
+    ],
+    "renderer": "Remotion + Three.js",
+    "sha256": "ea05a34e83e6af2f2d56ac5329483a9f32b41961ae231e9605c02dd8a7a4db18",
+    "poster": "about/poster.png",
+    "source": "about/index.html"
+  },
+  {
+    "section": "experience",
+    "bytes": 1749729,
+    "duration": 8,
+    "fps": 30,
+    "size": [
+      1200,
+      704
+    ],
+    "renderer": "Remotion + Three.js",
+    "sha256": "00c357be21c6c665f12d007f68032a2a633f1fa8ea35e15e94edf5605943cd76",
+    "poster": "experience/poster.png",
+    "source": "experience/index.html"
+  },
+  {
+    "section": "education",
+    "bytes": 1521306,
+    "duration": 8,
+    "fps": 30,
+    "size": [
+      1200,
+      704
+    ],
+    "renderer": "Remotion + Three.js",
+    "sha256": "80059ed2adfb2952b1c05026308716eebae849226f8d260afa13a08aa487133b",
+    "poster": "education/poster.png",
+    "source": "education/index.html"
+  },
+  {
+    "section": "projects",
+    "bytes": 1618358,
+    "duration": 8,
+    "fps": 30,
+    "size": [
+      1200,
+      704
+    ],
+    "renderer": "Remotion + Three.js",
+    "sha256": "7cc833c218c77a010b9694469de234d50ad3be6311ccc9570280515f059350d6",
+    "poster": "projects/poster.png",
+    "source": "projects/index.html"
+  },
+  {
+    "section": "skills",
+    "bytes": 552216,
+    "duration": 8,
+    "fps": 30,
+    "size": [
+      1200,
+      704
+    ],
+    "renderer": "HyperFrames v6 retained",
+    "sha256": "1bba2fbc2ceee979bd2bd182ef41447769f92de39b673f50b2263b80ad38455b",
+    "poster": "skills/poster.png",
+    "source": "skills/index.html"
+  },
+  {
+    "section": "contact",
+    "bytes": 496049,
+    "duration": 8,
+    "fps": 30,
+    "size": [
+      1200,
+      704
+    ],
+    "renderer": "HyperFrames v6 retained",
+    "sha256": "13a35686134f91afea334dcf22c1d85a06412b02583679904c094a72ca2cadfb",
+    "poster": "contact/poster.png",
+    "source": "contact/index.html"
+  }
+]

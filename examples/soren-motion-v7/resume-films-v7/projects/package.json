@@ -1,0 +1,9 @@
+{
+  "name": "soren-projects-film",
+  "private": true,
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.211 preview --background",
+    "check": "npx --yes hyperframes@0.8.211 check",
+    "render": "npx --yes hyperframes@0.8.211 render"
+  }
+}

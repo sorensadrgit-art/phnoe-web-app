@@ -1,0 +1,7 @@
+# Only these authored portfolio exports override the repository's data exclusions.
+.thumbnails/
+.hyperframes/
+!**/*.mp4
+!**/*.glb
+!resume-films-v7/projects/
+!resume-films-v7/projects/**
