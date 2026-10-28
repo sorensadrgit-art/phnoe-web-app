@@ -3,6 +3,7 @@ import {motion} from 'motion/react';
 import type {ResumeSection} from './resumeData';
 import {ChapterTabs,CopyButton,Film,TransitionPanel} from './ExplorerControls';
 import {frameFromTime,githubUrl,projects,projectTitle,skillLinks,splineUrl} from './explorerData';
+import {animateModalEntrance} from './motion/gsapModalChoreography';
 
 const LiveStudy=lazy(()=>import('./LiveStudy'));
 const BiomechanicalLabProject=lazy(()=>import('./projects/biomechanical-lab/BiomechanicalLabProject'));
@@ -131,7 +132,27 @@ function Contact({section,reduced}:Props) {
 }
 
 export function SectionExplorer(props:Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const components:Record<string,(p:Props)=>ReactNode>={about:About,experience:Experience,education:Education,projects:Projects,skills:Skills,contact:Contact};
   const Component=components[props.section.id];
-  return <div className={'ex-scroll ex-'+props.section.id}><Heading section={props.section}/><main className="ex-content"><Component {...props}/></main><footer className="ex-footer"><span>SOREN / A LIVING RÉSUMÉ</span><span>Draft résumé content · projects and studies in progress</span></footer></div>;
+
+  useEffect(() => {
+    if (containerRef.current) {
+      const tl = animateModalEntrance(containerRef.current, { reduced: props.reduced });
+      return () => {
+        tl?.kill();
+      };
+    }
+  }, [props.section.id, props.reduced]);
+
+  return (
+    <div ref={containerRef} className={'ex-scroll ex-'+props.section.id}>
+      <Heading section={props.section}/>
+      <main className="ex-content"><Component {...props}/></main>
+      <footer className="ex-footer">
+        <span>SOREN / A LIVING RÉSUMÉ</span>
+        <span>Draft résumé content · projects and studies in progress</span>
+      </footer>
+    </div>
+  );
 }
