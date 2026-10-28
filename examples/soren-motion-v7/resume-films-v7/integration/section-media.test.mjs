@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const listeners=new Map();
+const videos=[];
+const motion={matches:false,addEventListener:(e,f)=>listeners.set('motion',f),removeEventListener:()=>listeners.delete('motion')};
+const document={hidden:false,addEventListener:(e,f)=>listeners.set(e,f),removeEventListener:e=>listeners.delete(e),createElement:()=>{
+ const v={paused:true,readyState:2,currentTime:1,play(){this.paused=false;return Promise.resolve()},pause(){this.paused=true},addEventListener(){},removeAttribute(){},load(){}};
+ videos.push(v);return v;
+}};
+const context={document,matchMedia:()=>motion,SECTION_VIDEOS:{a:'a.mp4',b:'b.mp4'}};
+vm.createContext(context);
+vm.runInContext(readFileSync(new URL('./section-media-runtime.js',import.meta.url),'utf8')+';globalThis.SectionMedia=SectionMedia',context);
+const scene={canvas:{dataset:{}},wake(){},detailOpen:false,sections:[{id:'a'},{id:'b'}],surfaces:[]};
+for(let index=0;index<2;index++)for(let i=0;i<3;i++)scene.surfaces.push({logicalIndex:index,face:{visible:index===0,userData:{mediaVisible:true}},texture:{image:{}}});
+let painted=0;
+const media=new context.SectionMedia(scene,()=>painted++);
+media.update();await Promise.resolve();
+assert.equal(videos.length,1,'one decoder for three visible copies');
+assert.equal(painted,1,'one texture upload per new frame');
+media.update();assert.equal(painted,1,'unchanged frames do not repaint');
+scene.surfaces.forEach(s=>s.face.visible=s.logicalIndex===1);
+media.update();await Promise.resolve();assert.equal(videos.length,2);assert.equal(videos[0].paused,true);
+scene.detailOpen=true;media.update();assert.ok(videos.every(v=>v.paused));
+scene.detailOpen=false;motion.matches=true;media.update();assert.ok(videos.every(v=>v.paused));
+motion.matches=false;document.hidden=true;media.update();assert.ok(videos.every(v=>v.paused));
+media.dispose();assert.equal(listeners.size,0,'lifecycle listeners removed');
+console.log('PASS: shared decoders, frame deduplication, visibility, detail, reduced motion, hidden tab, cleanup');

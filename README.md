@@ -31,4 +31,8 @@ Source of truth on AgentZero: `C:\Users\soren\Documents\Projects\KineLab-PT-Dual
 
 Repository: `https://github.com/sorensadrgit-art/phnoe-web-app`
 
+## SOREN résumé example
+
+The latest independent portfolio copy is [Motion Exhibits v7](examples/soren-motion-v7/README.md). It includes a self-contained browser demo and editable Remotion/HyperFrames sources. Its rendered art and attributed study asset are scoped to that example; the earlier v4 copy is preserved.
+
 Private repository. Do not publish or redistribute sample research footage without confirming its rights.

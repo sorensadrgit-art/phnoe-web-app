@@ -1,0 +1,95 @@
+{
+  "checks": [
+    "generated module parses",
+    "six motion studies initialized",
+    "live video frames reach WebGL textures",
+    "visible decoder count is bounded",
+    "about detail video plays",
+    "about dialog closes",
+    "experience detail video plays",
+    "experience dialog closes",
+    "education detail video plays",
+    "education dialog closes",
+    "projects detail video plays",
+    "projects dialog closes",
+    "skills detail video plays",
+    "skills dialog closes",
+    "contact detail video plays",
+    "contact dialog closes",
+    "reduced motion stops WebGL",
+    "reduced motion has a poster with no video request",
+    "mobile preserves six cards with no overflow",
+    "mobile detail video plays",
+    "desktop clears the mobile scroll offset",
+    "WebGL restores after media and viewport changes",
+    "no runtime errors",
+    "about export duration and 30 fps",
+    "experience export duration and 30 fps",
+    "education export duration and 30 fps",
+    "projects export duration and 30 fps",
+    "skills export duration and 30 fps",
+    "contact export duration and 30 fps"
+  ],
+  "media": [
+    {
+      "section": "about",
+      "bytes": 910904,
+      "duration": 8,
+      "fps": 30,
+      "size": [
+        1200,
+        704
+      ]
+    },
+    {
+      "section": "experience",
+      "bytes": 1749729,
+      "duration": 8,
+      "fps": 30,
+      "size": [
+        1200,
+        704
+      ]
+    },
+    {
+      "section": "education",
+      "bytes": 1521306,
+      "duration": 8,
+      "fps": 30,
+      "size": [
+        1200,
+        704
+      ]
+    },
+    {
+      "section": "projects",
+      "bytes": 1618358,
+      "duration": 8,
+      "fps": 30,
+      "size": [
+        1200,
+        704
+      ]
+    },
+    {
+      "section": "skills",
+      "bytes": 552216,
+      "duration": 8,
+      "fps": 30,
+      "size": [
+        1200,
+        704
+      ]
+    },
+    {
+      "section": "contact",
+      "bytes": 496049,
+      "duration": 8,
+      "fps": 30,
+      "size": [
+        1200,
+        704
+      ]
+    }
+  ]
+}
