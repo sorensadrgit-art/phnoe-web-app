@@ -13,8 +13,33 @@ export const BiomechanicalLabProject: React.FC<BiomechanicalLabProjectProps> = (
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const [activeTab, setActiveTab] = useState<'viewport' | 'telemetry' | 'attribution'>('viewport');
+  const [activeTab, setActiveTab] = useState<'viewport' | 'telemetry' | 'folio' | 'attribution'>('viewport');
+  const [selectedPlate, setSelectedPlate] = useState(0);
   const [scrubProgress, setScrubProgress] = useState(0.5);
+
+  const plates = [
+    {
+      id: '01',
+      title: 'Plate VIII · Translation Geometry',
+      subtitle: 'The Spatial Geometry of Articulated Manifolds',
+      image: import.meta.env.BASE_URL + 'assets/art/plate-01-translation-geometry.png',
+      caption: 'Unified 7-DOF spatial manifold, harmonic gait epicycloids, and global terrestrial datum.'
+    },
+    {
+      id: '02',
+      title: 'Plate IX · Tibiofemoral Kinematics',
+      subtitle: 'Instantaneous Helical Axes & Contact Stress Manifolds',
+      image: import.meta.env.BASE_URL + 'assets/art/plate-02-tibiofemoral-kinematics.png',
+      caption: 'Biological human knee articulation, sagittal ICR evolute J-curve, femoral rollback, and cruciate strain.'
+    },
+    {
+      id: '03',
+      title: 'Plate X · Cybernetic Manipulation',
+      subtitle: '7-DOF Jacobian Manipulability & Singularity Hulls',
+      image: import.meta.env.BASE_URL + 'assets/art/plate-03-cybernetic-manipulation.png',
+      caption: 'NVIDIA SimReady Franka serial chain, Yoshikawa dexterity ellipsoids, and Cartesian velocity saturation.'
+    }
+  ];
 
   // Focus management and keyboard accessibility
   useEffect(() => {
@@ -84,6 +109,15 @@ export const BiomechanicalLabProject: React.FC<BiomechanicalLabProjectProps> = (
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('folio')}
+                className={`px-3 py-1.5 rounded-md transition-colors ${
+                  activeTab === 'folio' ? 'bg-sky-500/20 text-sky-300 font-semibold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Archival Folio
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('attribution')}
                 className={`px-3 py-1.5 rounded-md transition-colors ${
                   activeTab === 'attribution' ? 'bg-sky-500/20 text-sky-300 font-semibold' : 'text-slate-400 hover:text-white'
@@ -138,19 +172,100 @@ export const BiomechanicalLabProject: React.FC<BiomechanicalLabProjectProps> = (
           {activeTab === 'telemetry' && (
             <div className="p-8 max-w-4xl mx-auto h-full overflow-y-auto space-y-6 font-mono text-xs">
               <div className="p-4 rounded-xl border border-white/10 bg-white/5 space-y-2">
-                <h3 className="text-sm font-semibold text-sky-400">Clinical Movement Phase Architecture</h3>
-                <p className="text-slate-400">
-                  Calculated from 97-frame KineLab coordinate trajectory. Kinematics represent demonstration data.
-                </p>
+                <p className="text-sky-400 font-bold uppercase tracking-wider text-[10px]">Real-Time Joint Telemetry</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
+                  <div>
+                    <span className="text-slate-500 block">Current Phase:</span>
+                    <span className="text-white font-semibold">{currentFrame.phase}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Joint Flexion:</span>
+                    <span className="text-white font-semibold">{currentFrame.jointAngleDeg.toFixed(2)}°</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Angular Velocity:</span>
+                    <span className="text-white font-semibold">{currentFrame.angularVelocity.toFixed(2)} rad/s</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Dynamic Torque:</span>
+                    <span className="text-white font-semibold">{currentFrame.torqueNm.toFixed(2)} Nm</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <p className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Movement Sequence Phases</p>
                 {KINEMATIC_PHASES.map((phase) => (
-                  <div key={phase.id} className="p-4 rounded-lg border border-white/10 bg-slate-900/60">
+                  <div key={phase.name} className="p-3 rounded-lg border border-white/5 bg-slate-900/40">
                     <p className="text-sky-300 font-bold mb-1">{phase.name}</p>
                     <p className="text-slate-400">Normalized Range: {(phase.start * 100).toFixed(0)}% – {(phase.end * 100).toFixed(0)}%</p>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'folio' && (
+            <div className="p-6 max-w-5xl mx-auto h-full overflow-y-auto flex flex-col space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <div className="flex gap-2">
+                  {plates.map((p, idx) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSelectedPlate(idx)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors ${
+                        selectedPlate === idx
+                          ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30 font-semibold'
+                          : 'bg-white/5 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {p.id} · {p.title.split('·')[1]?.trim()}
+                    </button>
+                  ))}
+                </div>
+
+                <a
+                  href={import.meta.env.BASE_URL + 'assets/art/kinematic-monism-trilogy.pdf'}
+                  download="kinematic-monism-trilogy.pdf"
+                  className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 text-xs font-mono transition-colors inline-flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download 3-Page Archival Folio (PDF)
+                </a>
+              </div>
+
+              {/* Active Plate Display */}
+              <div className="flex-1 flex flex-col lg:flex-row gap-6 items-center justify-center p-4 rounded-xl border border-white/10 bg-slate-950/60 overflow-hidden">
+                <div className="w-full lg:w-3/5 max-h-[56vh] flex items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black/60 shadow-inner">
+                  <img
+                    src={plates[selectedPlate].image}
+                    alt={plates[selectedPlate].title}
+                    className="object-contain max-h-[56vh] w-auto transition-transform hover:scale-105 duration-300"
+                  />
+                </div>
+
+                <div className="w-full lg:w-2/5 space-y-3 font-mono text-xs">
+                  <div className="inline-block px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 text-[10px] font-semibold border border-sky-500/20">
+                    FINE ART FOLIO EDITION · 1 OF 3
+                  </div>
+                  <h3 className="text-base font-bold text-white tracking-wide">
+                    {plates[selectedPlate].title}
+                  </h3>
+                  <p className="text-amber-300/90 text-xs font-semibold">
+                    {plates[selectedPlate].subtitle}
+                  </p>
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    {plates[selectedPlate].caption}
+                  </p>
+                  <div className="p-3 rounded-lg border border-white/5 bg-white/5 text-[10px] text-slate-400 space-y-1">
+                    <p><span className="text-slate-300">Aesthetic Movement:</span> Kinematic Monism</p>
+                    <p><span className="text-slate-300">Format:</span> 300 DPI Fine Art Folio (18" × 24" vector & raster)</p>
+                    <p><span className="text-slate-300">Licensing:</span> CC BY 4.0 DBCLS & NVIDIA SimReady Central</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -168,6 +283,11 @@ export const BiomechanicalLabProject: React.FC<BiomechanicalLabProjectProps> = (
                   <h4 className="text-sky-400 font-bold mb-1">2. NVIDIA SimReady Assets</h4>
                   <p>Simulation-ready robotics and manipulator models licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).</p>
                   <p className="text-slate-500">Credit: NVIDIA Corporation SimReady Central library.</p>
+                </div>
+                <div className="border-t border-white/10 pt-4">
+                  <h4 className="text-sky-400 font-bold mb-1">3. Kinematic Monism Art Trilogy</h4>
+                  <p>Original fine art plates and visual philosophy created under Creative Commons Attribution 4.0 International (CC BY 4.0).</p>
+                  <p className="text-slate-500">Designed via the Kinematic Monism visual philosophy for the SOREN Living Résumé.</p>
                 </div>
               </div>
             </div>
