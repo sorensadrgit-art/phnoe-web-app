@@ -5,6 +5,7 @@ import {ChapterTabs,CopyButton,Film,TransitionPanel} from './ExplorerControls';
 import {frameFromTime,githubUrl,projects,projectTitle,skillLinks,splineUrl} from './explorerData';
 
 const LiveStudy=lazy(()=>import('./LiveStudy'));
+const BiomechanicalLabProject=lazy(()=>import('./projects/biomechanical-lab/BiomechanicalLabProject'));
 type Props={section:ResumeSection;reduced:boolean;initialProject?:string;onNavigate:(id:string,project?:string)=>void};
 const captions:Record<string,string>={about:'THE HUMAN BEHIND THE SYSTEMS',experience:'SERVICE / EDUCATION / MAKING',education:'LEARNING THROUGH MOVEMENT',projects:'SELECTED WORK / OPEN EXPLORATIONS',skills:'TOOLS, CONNECTED TO PRACTICE',contact:'THE NEXT CONVERSATION'};
 
@@ -92,6 +93,11 @@ function SystemStudy({reduced}:{reduced:boolean}) {
 }
 function StepprStudy(){const [night,setNight]=useState(false);return <div className={'ex-steppr-study'+(night?' is-night':'')}><p className="ex-kicker">STEPPR / ENVIRONMENT STUDY</p><h3>Same space.<br/><em>Different light.</em></h3><p>A study of atmosphere, lighting, and first-person navigation in Spline.</p><button className="ex-light-switch" type="button" role="switch" aria-checked={night} onClick={()=>setNight(!night)}><span aria-hidden="true"/>{night?'Night palette':'Day palette'}</button><p className="ex-small">Palette preview only. Open Spline for the actual room.</p><a className="ex-button" href={splineUrl} target="_blank" rel="noopener noreferrer">Open the Spline study ↗</a></div>;}
 
+function BiomechanicalLabStage({reduced}:{reduced:boolean}) {
+  const [open,setOpen]=useState(false);
+  return <div className="ex-biomech-stage"><Film id="projects" reduced={reduced}/><div className="ex-stage-stamp"><span>PROJECT 05 · biomech-lab</span><strong>Biomechanical Cybernetic Lab</strong></div><button type="button" className="ex-explore-button" onClick={()=>setOpen(true)}>Open 3D laboratory <span aria-hidden="true">↗</span></button>{open&&<Suspense fallback={null}><BiomechanicalLabProject isOpen={open} onClose={()=>setOpen(false)}/></Suspense>}</div>;
+}
+
 function ResumeStudy({reduced}:{reduced:boolean}) {
   const [active,setActive]=useState(0);
   const ids=['about','experience','education','projects','skills','contact'];
@@ -103,7 +109,7 @@ function Projects({section,reduced,initialProject}:Props) {
   const project=projects[active];
   return <div className="ex-project-layout"><div className="ex-project-select"><ChapterTabs labels={projects.map(p=>p.title)} active={active} onChange={setActive} label="Selected projects"/></div>
     <Panel active={active}><div className={'ex-project-grid ex-project-'+project.id}><div className="ex-project-stage" key={project.id}>
-      {active===0?<MotionDemo reduced={reduced}/>:active===1?<SystemStudy reduced={reduced}/>:active===2?<StepprStudy/>:<ResumeStudy reduced={reduced}/>}
+      {active===0?<MotionDemo reduced={reduced}/>:active===1?<SystemStudy reduced={reduced}/>:active===2?<StepprStudy/>:active===3?<ResumeStudy reduced={reduced}/>:<BiomechanicalLabStage reduced={reduced}/>}
     </div><div className="ex-project-story"><span className="ex-kicker">0{active+1} / {project.status}</span><h2>{project.title}</h2><p>{project.overview}</p><div className="ex-stack">{project.stack.map(s=><span key={s}>{s}</span>)}</div>
       <div className="ex-expandable">{(['problem','build','evidence','limits'] as const).map(key=><div key={key}><h3><button type="button" aria-expanded={expanded===key} aria-controls={'ex-project-'+key} onClick={()=>setExpanded(expanded===key?null:key)}>{key}<span aria-hidden="true">{expanded===key?'−':'+'}</span></button></h3>
         <motion.div id={'ex-project-'+key} className="ex-expand-content" inert={expanded!==key} initial={false} animate={{height:expanded===key?'auto':0,opacity:expanded===key?1:0}} transition={{duration:reduced?0:.24}}><p>{project[key]}</p></motion.div></div>)}</div>

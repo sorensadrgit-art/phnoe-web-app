@@ -1,6 +1,6 @@
 import {resumeSections} from './resumeData';
 
-export const projectIds = ['kinelab','soren-mcp','steppr','living-resume'] as const;
+export const projectIds = ['kinelab','soren-mcp','steppr','living-resume','biomech-lab'] as const;
 export type ProjectId = typeof projectIds[number];
 const blocks = resumeSections.find(s=>s.id==='projects')!.blocks;
 export const projects = [
@@ -24,11 +24,16 @@ export const projects = [
     build:'Six films, a curved Three.js ribbon, GSAP transitions, and React section explorers.',
     evidence:'The interface you are using is the working prototype. All six sections remain HTML.',
     limits:'Visual motion is a design study. Device performance varies.', stack:['React','TypeScript','Three.js','GSAP']},
+  {id:'biomech-lab', title:'Biomechanical Lab', short:'Cybernetics', status:'Study', overview:blocks[4]?.value || 'Interactive kinematic cybernetics study linking NVIDIA SimReady robotics with human biomechanics.',
+    problem:'Connect industrial articulated robotics with human movement kinematics in a real-time web shader and 1440p60 film.',
+    build:'NVIDIA SimReady Franka arm, CC BY 4.0 BodyParts3D musculoskeletal joints, interactive GLSL kinematic shaders, and Remotion/Hyperframes hero film.',
+    evidence:'Interact with the 3D kinematic canvas and joint telemetry below. Real-time WebGL rendering with GPU instancing and zero runtime bloat.',
+    limits:'Kinematic telemetry illustrates motion trajectories and joint velocities; clinical torque validation requires lab instrumentation.', stack:['Three.js','SimReady','GLSL','Remotion','Hyperframes']},
 ] as const;
 
 export const skillLinks = [
   {name:'React', category:'Interface', projects:['living-resume'], note:'Section interfaces, state, and semantic navigation.'},
-  {name:'Three.js', category:'3D', projects:['living-resume','kinelab'], note:'The curved ribbon and movement visualization.'},
+  {name:'Three.js', category:'3D', projects:['living-resume','kinelab','biomech-lab'], note:'The curved ribbon, movement visualization, and real-time kinematic cybernetics canvas.'},
   {name:'GSAP', category:'Motion', projects:['living-resume'], note:'The measured ribbon hover and section flight.'},
   {name:'Spline', category:'3D', projects:['steppr'], note:'The Steppr room, lighting, and navigation study.'},
   {name:'Python', category:'Movement', projects:['kinelab'], note:'Movement-analysis and data-processing experiments.'},

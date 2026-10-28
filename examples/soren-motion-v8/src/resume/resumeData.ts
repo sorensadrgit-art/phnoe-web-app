@@ -136,6 +136,10 @@ export const resumeSections: ResumeSection[] = [
       {
         label: 'LIVING RÉSUMÉ',
         value: 'This portfolio experiment brings together curved Three.js cards, React interfaces, GSAP transitions, and accessible content navigation.'
+      },
+      {
+        label: 'BIOMECH LAB',
+        value: 'Biomechanical Cybernetic Lab integrates NVIDIA SimReady robotics, BodyParts3D human musculoskeletal kinematics, and telemetry shaders into a real-time interactive laboratory and 1440p60 cinematic film.'
       }
     ]
   },

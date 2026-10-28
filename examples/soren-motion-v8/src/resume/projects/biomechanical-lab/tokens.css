@@ -1,0 +1,30 @@
+/* Biomechanical Cybernetic Lab — Design Tokens */
+/* Synchronized with v8 luxuryTokens.ts and OpenDesign modern-minimal posture */
+
+:root {
+  --bg: #080f12;
+  --paper: #f3ede3;
+  --type-ink: #242724;
+  --surface: #0e1519;
+  --surface-raised: #141f24;
+  --surface-glass: rgba(8, 15, 18, 0.78);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hairline: rgba(255, 255, 255, 0.05);
+
+  /* v8 Signature Luxury Accents */
+  --amber: #d8a363;
+  --teal: #347b83;
+  --terracotta: #b77558;
+  --sage: #748a69;
+  --alpine-blue: #7fafc7;
+  --accent: #7fafc7;
+  --accent-glow: rgba(127, 175, 199, 0.28);
+  --telemetry-amber: #d8a363;
+  --telemetry-cyan: #7fafc7;
+  --telemetry-grid: rgba(255, 255, 255, 0.04);
+
+  /* Typography Stacks */
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}

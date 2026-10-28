@@ -67,3 +67,10 @@ See `docs/component-sources.md`, the retained license notices, and `baseline.jso
 Résumé wording remains draft content. Military dates, email, and LinkedIn were not invented. The anatomy is adapted study geometry. KineLab motion is an existing demo export, not a validated clinical measurement. The Steppr palette control is local illustrative UI; the actual Spline scene opens through the supplied link.
 
 The Three.js production chunk is approximately 524 kB before gzip and is lazy loaded. This build does not add a second 3D framework or include the Remotion/HyperFrames authoring runtimes in the website.
+
+## Biomechanical Cybernetic Lab Extension
+
+- **Project:** **Biomechanical Cybernetic Lab** digital twin connecting robotics and human movement kinematics.
+- **3D Robotics & Manipulators:** NVIDIA SimReady Franka Research 3 models licensed under CC BY 4.0.
+- **Musculoskeletal Assembly:** BodyParts3D adapted anatomy geometry © DBCLS under CC BY 4.0.
+- **Hero Video Pipeline:** Remotion and Hyperframes 1440p60 composition in `motion-source/biomechanical-hero`.
