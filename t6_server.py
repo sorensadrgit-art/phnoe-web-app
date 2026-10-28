@@ -394,7 +394,7 @@ def main():
     sys.stdout = log_file
     sys.stderr = log_file
 
-    doc = json.loads(args.state.read_text(encoding="utf-8"))
+    doc = json.loads(args.state.read_text(encoding="utf-8-sig"))
     if (not isinstance(doc, dict) or doc.get("port") != args.port or
             not isinstance(doc.get("token"), str) or len(doc["token"]) < 40):
         raise ValueError("Unified local server state mismatch")

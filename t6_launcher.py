@@ -47,7 +47,7 @@ def choose_available_port(ports=PORTS) -> int:
 
 def read_state(path: Path = STATE) -> dict | None:
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
         if (not isinstance(data, dict) or data.get("schema") != SCHEMA or
                 type(data.get("port")) is not int or not 1024 <= data["port"] <= 65535 or
                 not isinstance(data.get("token"), str) or len(data["token"]) != 64 or

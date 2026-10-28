@@ -3,8 +3,8 @@
 ## 1. Package Specifications
 - **Package Name**: `KineLabPT-v1.0.0-windows-x64`
 - **Archive Path**: `dist/KineLabPT-v1.0.0-windows-x64.zip`
-- **Archive Size**: 709,808 bytes
-- **SHA-256 Digest**: `cbd6d10292d24960c93597c8a8511abfbf2b61d5674fa50467b35dc30b0cf980`
+- **Archive Size**: 709,820 bytes
+- **SHA-256 Digest**: `6e7efd4dc350ca8da986ac0e74a60d613d2e7e12d534cd5fd22c1be39edf9c0d`
 - **Total Packaged Files**: 45 files (verified 100% against manifest)
 - **Target Platform**: Windows 10 / 11 64-bit (x86_64)
 
