@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { KinematicCanvas } from './KinematicCanvas';
 import { KINEMATIC_PHASES, getKinematicFrame } from './telemetry-data';
+import { SHOT_SEQUENCE } from '../../motion/openDesignMotionTokens';
 
 export interface BiomechanicalLabProjectProps {
   isOpen: boolean;
@@ -190,6 +191,21 @@ export const BiomechanicalLabProject: React.FC<BiomechanicalLabProjectProps> = (
                     <span className="text-slate-500 block">Dynamic Torque:</span>
                     <span className="text-white font-semibold">{currentFrame.torqueNm.toFixed(2)} Nm</span>
                   </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sky-400 font-semibold uppercase tracking-wider text-[10px]">OpenDesign Cinematic Motion Sequence (1440p60)</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {SHOT_SEQUENCE.map((shot) => (
+                    <div key={shot.id} className="p-3 rounded-lg border border-white/10 bg-slate-900/60 font-mono">
+                      <div className="flex justify-between items-baseline mb-1">
+                        <span className="text-white font-bold">{shot.name}</span>
+                        <span className="text-[10px] text-sky-400">Frames {shot.startFrame}–{shot.endFrame} ({shot.startTimeSec.toFixed(1)}s–{shot.endTimeSec.toFixed(1)}s)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">FOV: {shot.fov}° · Easing: {shot.easing} · Camera: [{shot.cameraPosition.join(', ')}]</p>
+                    </div>
+                  ))}
                 </div>
               </div>
 
