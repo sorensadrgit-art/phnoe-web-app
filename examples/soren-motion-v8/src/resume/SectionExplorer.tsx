@@ -4,11 +4,13 @@ import type {ResumeSection} from './resumeData';
 import {ChapterTabs,CopyButton,Film,TransitionPanel} from './ExplorerControls';
 import {frameFromTime,githubUrl,projects,projectTitle,skillLinks,splineUrl} from './explorerData';
 import {animateModalEntrance} from './motion/gsapModalChoreography';
+import {ModalAmbientCanvas} from './motion/ModalAmbientCanvas';
 
 const LiveStudy=lazy(()=>import('./LiveStudy'));
 const BiomechanicalLabProject=lazy(()=>import('./projects/biomechanical-lab/BiomechanicalLabProject'));
 type Props={section:ResumeSection;reduced:boolean;initialProject?:string;onNavigate:(id:string,project?:string)=>void};
 const captions:Record<string,string>={about:'THE HUMAN BEHIND THE SYSTEMS',experience:'SERVICE / EDUCATION / MAKING',education:'LEARNING THROUGH MOVEMENT',projects:'SELECTED WORK / OPEN EXPLORATIONS',skills:'TOOLS, CONNECTED TO PRACTICE',contact:'THE NEXT CONVERSATION'};
+const sectionHexAccents:Record<string,string>={about:'#00f5a0',experience:'#ff9f43',education:'#00d2d3',projects:'#3867d6',skills:'#a55eea',contact:'#f5f6fa'};
 
 function Heading({section}:{section:ResumeSection}) {
   return <header className="ex-heading"><div className="ex-eyebrow"><span>{section.number} / SOREN SADR</span><span>{captions[section.id]}</span></div>
@@ -146,10 +148,11 @@ export function SectionExplorer(props:Props) {
   }, [props.section.id, props.reduced]);
 
   return (
-    <div ref={containerRef} className={'ex-scroll ex-'+props.section.id}>
+    <div ref={containerRef} className={'ex-scroll ex-'+props.section.id} style={{ position: 'relative' }}>
+      <ModalAmbientCanvas accentColor={sectionHexAccents[props.section.id]} reduced={props.reduced}/>
       <Heading section={props.section}/>
-      <main className="ex-content"><Component {...props}/></main>
-      <footer className="ex-footer">
+      <main className="ex-content" style={{ position: 'relative', zIndex: 1 }}><Component {...props}/></main>
+      <footer className="ex-footer" style={{ position: 'relative', zIndex: 1 }}>
         <span>SOREN / A LIVING RÉSUMÉ</span>
         <span>Draft résumé content · projects and studies in progress</span>
       </footer>
