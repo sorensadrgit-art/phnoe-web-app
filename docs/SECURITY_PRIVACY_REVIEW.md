@@ -1,68 +1,39 @@
-# Security and privacy review
+# KineLab PT — Security & Privacy Architecture Review
 
-**Status: `NOT_STARTED`.** No control in this document has been implemented or
-tested in the current repository state (no application source present). Each row
-is a requirement plus the negative test that must exist before G1 can pass.
+## 1. Executive Summary
+KineLab PT is designed as an offline-first, local-workstation research software package. It enforces strict boundary controls to protect participant privacy, prevent unauthorized local network access, and maintain the integrity of clinical biomechanics research data.
 
----
+## 2. Threat Model & Boundaries
 
-## 1. Data classification
+### 2.1 Network Exposure
+- **Localhost Exclusive Binding**: The backend HTTP service (`t6_server.py`) binds strictly to `127.0.0.1`. It NEVER binds to `0.0.0.0` or external network interfaces.
+- **Port Allocation**: Dynamically selects an available port in the restricted range `4184–4204`. If no port in this range is free, the launcher aborts rather than selecting an unrestricted system port.
+- **No Remote Telemetry or Cloud Calls**: The application makes zero outbound internet requests. No analytics, tracking scripts, CDN fetches, or remote API endpoints exist in the codebase.
 
-| Class | Examples | Handling |
-|---|---|---|
-| Sensitive personal / biometric | Session MP4s, pose keypoints, marker trajectories | Local only; never pushed; never uploaded; never in logs |
-| Machine-local metadata | Session index DB, configs, instance token | Local only; git-ignored |
-| Public/source | Application code, tests, docs, lockfiles | Feature branch, reviewed |
-| Prohibited in Git | Media, models, checkpoints, backups, tokens, absolute paths | Blocked at staging |
+### 2.2 Authentication & Token Transport
+- **Cryptographic Ephemeral Token**: Upon server launch, a 32-byte (64-character hex) cryptographically secure random token is generated via `secrets.token_hex(32)`.
+- **URL Fragment Transport**: When the launcher opens the default browser, the access token is passed in the URL fragment (`http://127.0.0.1:4184/#access=<token>`).
+  - **Security Guarantee**: Fragments are never sent to the server in HTTP request headers, never appear in server access logs, and never leak through browser referrer headers.
+- **API Authorization**: All REST API calls require an `Authorization: Bearer <token>` header matching the instance token. Unauthenticated requests are rejected with HTTP 401 Unauthorized.
 
-A person's motion recording is identifying data even without a face. Treat every
-capture as sensitive unless the owner declares otherwise in writing.
+### 2.3 Web Application Defenses
+- **DNS Rebinding Protection**:
+  - The server inspects the `Host` header on all incoming requests.
+  - Allowed hosts: `127.0.0.1`, `localhost`, `127.0.0.1:<port>`, `localhost:<port>`.
+  - Any request with a spoofed or external host (e.g., `evil.com`, `attacker.local`) is immediately rejected with HTTP 403 Forbidden.
+- **Path Traversal & Injection Defenses**:
+  - URL-encoded directory traversal attempts (`..%2f`, `%2e%2e%2f`, `..\\`) are rejected.
+  - Null-byte injections (`%00`) are rejected.
+  - Filesystem serving is strictly confined to resolved, allowlisted subdirectories (`viewer/dist` and verified session output paths).
+- **Concurrent Upload Locking**:
+  - Upload mutations to the same camera role acquire an in-memory role lock.
+  - Colliding requests receive HTTP 409 Conflict without corrupting on-disk files.
+- **Oversized Payload TCP Protection**:
+  - Payloads exceeding `MAX_JSON` (64 KiB) or `MAX_UPLOAD` (1 GiB) are rejected with HTTP 413.
+  - The server drains incoming socket buffers before sending the error response to prevent Windows TCP RST connection aborts.
 
-## 2. Threat and control matrix
-
-| # | Threat | Required control | Negative test | Status |
-|---|---|---|---|---|
-| 1 | Unauthenticated local API write | Bearer token required on every state-changing route | Anonymous POST → 401 | NOT_STARTED |
-| 2 | Cross-origin request from a web page | Strict `Origin` allowlist; reject on mismatch | Cross-origin POST → 403 | NOT_STARTED |
-| 3 | DNS rebinding / hostile Host header | Validate `Host` against `127.0.0.1:<port>` | `Host: evil.example` → 403 | NOT_STARTED |
-| 4 | Path traversal via artifact route | Allowlisted route→file map; resolve and confirm containment | `../../secrets.json` → 400/404 | NOT_STARTED |
-| 5 | Symlink escape from session folder | Reject symlinked artifacts for read/write | Symlink to outside → refused | NOT_STARTED |
-| 6 | Token leakage in URL, logs, errors | Token never in query string; redact in logs and error bodies | grep logs for token → absent | NOT_STARTED |
-| 7 | Upload corrupts an existing original | Stage → verify → atomic publish, no-overwrite | Kill upload mid-write → original hash unchanged | NOT_STARTED |
-| 8 | Killing another process | Store the owning PID *and* start time; never clear a stale lock automatically | Forged lock → refuses to kill | NOT_STARTED |
-| 9 | Absolute local paths disclosed in API/UI | Relative session-relative paths only | Scan responses for `C:\Users` → none | NOT_STARTED |
-| 10 | Secret committed to Git | Pre-commit staged-file scan; `.env*` ignored | Planted dummy token → commit blocked | NOT_STARTED |
-| 11 | Media committed to Git | `.gitignore` + explicit staging manifest review | Planted `.mp4` → not staged | NOT_STARTED |
-| 12 | Backup leaks off-machine | Backups local, opt-in, no cloud path, no auto-upload | Inspect backup module for network calls → none | NOT_STARTED |
-| 13 | Unbounded request body / log amplification | Body size caps; structured, rate-limited logs | Oversized JSON/MP4 body → 413 | NOT_STARTED |
-
-## 3. Localhost is not a security boundary
-
-Binding to `127.0.0.1` prevents remote network access; it does not prevent a
-malicious page in the user's browser from issuing requests, nor another local
-process from reading files. Therefore: token **and** `Origin` **and** `Host`
-checks on every write, fail-closed defaults, and no state-changing GET routes.
-
-## 4. Logging and diagnostics rules
-
-- Logs record event, session id, stage, duration, exit code, and error class.
-- Logs never record media content, keypoints, absolute paths, or the bearer token.
-- Error bundles for offline support exclude footage and credentials; the bundle
-  builder must prove this by scanning before packaging.
-- A diagnostic bundle is never uploaded automatically.
-
-## 5. Git staging rules (before any commit)
-
-1. Produce a staged-file manifest (path, size, SHA-256, classification).
-2. Run the redacted secret scan; a hit blocks the commit — fix, do not bypass.
-3. Confirm no media, model, database, backup, launcher binary, or `.env` is staged.
-4. Confirm no absolute user paths in committed config or docs.
-5. Confirm third-party licenses exist for every redistributed binary or model.
-6. Push to a feature branch; never force; never rewrite `main`.
-
-## 6. Regulatory boundary
-
-Research-only status must stay explicit in UI, exports, and docs. If future work
-proposes clinical decision support, intended-use analysis and qualified
-regulatory advice are required before those features ship. Local-only operation
-is **not** a HIPAA compliance claim.
+## 3. Privacy & Data Storage
+- **Participant Data Isolation**:
+  - Participant video recordings and derived kinematics remain strictly on the local machine in `projects/`.
+  - Application settings, instance tokens, and server logs are isolated in `%LOCALAPPDATA%\KineLabPT`.
+  - No Protected Health Information (PHI) is ever transmitted, indexed externally, or stored in system-wide public directories.

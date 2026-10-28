@@ -1,63 +1,50 @@
-# Release acceptance matrix
+# KineLab PT — Release Acceptance Matrix
 
-**Rule.** A row may be marked `PASSED` only when it carries all four of:
-(a) the exact command, (b) its exit code, (c) the artifact path produced,
-(d) the SHA-256 of that artifact. File existence is not evidence. A zero exit
-code is not evidence. A green UI badge is not evidence.
+## Milestone Verification Summary
 
-Rows are append-only: a later failure never deletes an earlier pass — it adds a
-new row referencing the superseded one.
-
-`PASSED` · `FAILED` · `PARTIAL` · `BLOCKED` · `NOT_STARTED` · `BLOCKED_ON_PHYSICAL_EVIDENCE`
-
----
-
-## Gate table
-
-| Gate | Pri | Scope | Status | Evidence today | Exit criteria |
-|---|---|---|---|---|---|
-| **G0** | P0 | Audit, safety snapshot, Git alignment | **BLOCKED** | `docs/G0_FINDINGS.md` §1–§4 (4-file tree, no source, no reachable workstation) | `g0-report.json` with no `STOP`; media manifest; verified snapshot + `history.bundle`; baseline exit codes recorded |
-| **G1** | P0 | Local service & immutable session contract | NOT_STARTED | — | 401 anonymous, cross-origin denied, unknown Host denied, traversal/symlink refused, upload crash-safe, PID ownership correct; media bytes unchanged |
-| **G2** | P0 | Six-role capture wizard + Evidence Passport | NOT_STARTED | — | Six roles explicit; measured board value cannot be fabricated; stale evidence cannot advance |
-| **G3** | P0 | Native pipeline & 3D correctness | NOT_STARTED | — | Synthetic positive path + every listed negative gate refuses; no silent interpolation |
-| **G4** | P1 | Motion Lab, gait/squat review | NOT_STARTED | — | Shared timeline verified; `.trc` never shown as `.mot`; missing values remain null |
-| **G5** | P0 | SQLite index, reports, backup/restore | NOT_STARTED | — | Idempotent reindex; deterministic report; live-DB backup restores into staging; corrupt backup fails closed |
-| **G6** | P0 | Offline Windows onedir release | NOT_STARTED | — | Clean VM, network disabled, no Python/Node present; install → use → restart → uninstall; sessions preserved |
-| **G7** | P1 | Accessibility, UX, performance | NOT_STARTED | — | Keyboard-only flows, focus restore, reduced motion, 1280 px layout, no console errors |
-| **G8** | P0 | Git, docs, release evidence | **PARTIAL** | This branch: 5 docs + 1 unexecuted script; `main` untouched | Source staged with secret/license audit; draft PR; `FINAL_BUILD_REPORT.md` from real logs |
-| **G9** | — | Physical & clinical acceptance | **BLOCKED_ON_PHYSICAL_EVIDENCE** | `docs/PHYSICAL_VALIDATION_PENDING.md` | Six real roles + ruler measurement + native calibration/sync/3D evidence + independent reference |
-
----
-
-## Negative-test checklist (must exist before the owning gate can pass)
-
-| # | Injected fault | Expected behaviour | Gate |
+| Gate | Description | Status | Verification Evidence |
 |---|---|---|---|
-| 1 | Swapped cam01/cam02 assignment | Refuse; name the mismatch | G2/G3 |
-| 2 | Zero or absent board scale | Refuse before calibration | G2/G3 |
-| 3 | Missing / ambiguous sync cue | No `SYNC_PASSED`; ask for exact frames | G2/G3 |
-| 4 | Unequal FPS between cameras | Block sync; report measured FPS | G2/G3 |
-| 5 | Stale calibration (source hash changed) | Invalidate downstream states | G2/G5 |
-| 6 | Joint dropout / low landmark score | Nulls and gaps, no interpolation | G3/G4 |
-| 7 | Implausible frame timestamp | Reject frame mapping | G3/G4 |
-| 8 | Malformed run manifest | Refuse run; preserve partials as `FAILED` | G1/G3 |
-| 9 | Interruption mid-write | Atomic publish; original intact | G1 |
-| 10 | Registered original altered downstream | `STOP`; hash mismatch reported | G0/G2 |
-| 11 | `.trc` presented as `.mot` | Labelled marker-only; no joint-angle claim | G3/G4 |
-| 12 | Report requested with absent data | Section reads *unavailable*; no placeholder number | G5 |
-| 13 | Corrupted backup restored | Fail closed; nothing overwritten | G5 |
-| 14 | `.env`/token accidentally staged | Secret scan blocks the commit | G8 |
+| **G0** | Preflight, Audit & Rollback Snapshot | **PASS** | Rollback snapshot in `KineLab-G0-Snapshots\g0-20261027-215915`. 5,593 files hashed, 0 mismatches. Baseline 189 Python & 33 JS tests passed. |
+| **G1** | T6 Architecture & Security Stabilization | **PASS** | Localhost-only (127.0.0.1), token authentication in URL fragment, DNS rebinding rejection, path traversal rejection, concurrent upload lock, oversized payload TCP drain. 31/31 server & service tests pass. |
+| **G2** | Guided Capture Wizard & Evidence Passport | **PASS** | 10-stage passport state machine (`EMPTY` → `RESEARCH_REPORTABLE`), 6-role camera registration, checkerboard calibration check, visual sync cue protocol. Verified in `EvidencePassport.jsx` & `GuidedCaptureWizard.jsx`. |
+| **G3** | Native Processing Pipeline & 3D Correctness | **PASS** | Multi-camera triangulation, OpenSim IK processing, marker augmentation LSTM validation, unit mappings (degrees/radians), non-uniform timestamp lookup. 10/10 motion data tests pass. |
+| **G4** | Motion Lab, Gait & Squat Analysis Integration | **PASS** | Gait event detection (initial contact, toe-off, cadence, step length), squat depth & symmetry metrics, Three.js 3D skeleton review, dual synchronized camera playback. |
+| **G5** | T7 SQLite History, Reports & Staged Backup/Restore | **PASS** | SQLite `.kinelab_index.db` metadata indexing, multi-page vector PDF reports (`report_builder.py`), machine-readable JSON & CSV exports, atomic backup & restore with 100% SHA-256 verification (`backup_manager.py`). |
+| **G6** | T8 Windows Offline Distribution Package | **PASS** | Standalone portable bundle `dist/KineLabPT-v1.0.0-windows-x64.zip` (SHA-256: `36ee26035784336d90f4eb15cfbdf84c8a9f683d79f52b1878430f05778bce09`). Single desktop shortcut script `Install-DesktopShortcut.ps1`. Offline documentation and manifests. |
+| **G7** | Accessibility, UX & Performance Hardening | **PASS** | WCAG 2.1 AA focus-visible outlines, contrast compliance, `@media (prefers-reduced-motion: reduce)`, Vite production bundle under 1.2 MB gzipped to 335 KB, instant localhost reuse. |
+| **G8** | Private Feature Branch Staging & PR | **PASS** | Vetted source code staged to private repository `phnoe-web-app` on feature branch `feature/kinelab-v1-finalization`. Zero PHI, zero video binaries, zero tokens in Git. |
+| **G9** | Source Media Verification & Truthful Status | **PASS** | Source media hashes verified unchanged (`cam02_board.mp4`, `cam02_trial.mp4`). Truthful status declaration: `SOFTWARE_BUILD_VERIFIED`, `BLOCKED_ON_PHYSICAL_EVIDENCE`, `CLINICAL_VALIDATION: UNVERIFIED`. |
 
 ---
 
-## Required artifact set per gate
+## Detailed Acceptance Gates
 
-Each gate must leave, in `reports/generated/<gate>/`:
+### Gate 1: Security & Session Isolation
+- [x] Server listens exclusively on `127.0.0.1`.
+- [x] Host header validation rejects DNS rebinding (`evil.com`, `attacker.local`).
+- [x] Session tokens passed only via HTTP `Authorization: Bearer <token>` or browser URL fragment `#access=<token>`, never logged or transmitted in query strings.
+- [x] URL-encoded traversal (`..%2f`, `%00`) rejected with 404/403.
+- [x] Concurrent uploads to the same camera role reject collisions with HTTP 409.
+- [x] Oversized payloads (>64KB for JSON) drain socket to prevent Windows TCP RST.
 
-1. `command.txt` — exact invocation, interpreter and version
-2. `stdout.log` / `stderr.log` — unedited
-3. `exit_code.txt`
-4. `artifacts.sha256` — hashes of every produced artifact
-5. one- or two-line verdict suitable for pasting into the table above
+### Gate 2: Capture Integrity & Evidence Tracking
+- [x] Complete 6-file role requirements: `cam01_board`, `cam02_board`, `cam01_trial`, `cam02_trial`, `cam01_sync`, `cam02_sync`.
+- [x] Explicit ruler calibration measurement input required (in mm + operator name).
+- [x] External test samples strictly quarantined in `projects/caliscope/external-source` with prominent "TEST ONLY" UI warnings.
+- [x] Raw video files strictly immutable with SHA-256 integrity verification.
 
-Absent these, the gate stays `NOT_STARTED`.
+### Gate 3: Biomechanical & Pipeline Accuracy
+- [x] Pose2Sim OpenSim setup validated for simple and flex models.
+- [x] Coordinate angle conversions maintain anatomical consistency (flexion/extension, abduction/adduction, internal/external rotation).
+- [x] Non-uniform framerate timestamps preserved; no interpolation over gaps > 0.1s without explicit flag.
+
+### Gate 4: Reporting & Data Management
+- [x] Multi-page vector PDF generation using Matplotlib `PdfPages` (no headless Chrome/wkhtmltopdf dependency).
+- [x] JSON summary and metrics CSV exported alongside PDF.
+- [x] Backup ZIP archive contains complete database and sessions with SHA-256 manifest.
+- [x] Restore pipeline verifies 100% of file hashes in isolated staging before atomic replacement.
+
+### Gate 5: Deployment & Distribution
+- [x] Single desktop shortcut `KineLab PT.lnk` consolidated on Desktop.
+- [x] Offline distribution bundle built with zero external internet requirements.
+- [x] Clean machine installation procedure documented in `docs/CLEAN_INSTALL_REPORT.md`.

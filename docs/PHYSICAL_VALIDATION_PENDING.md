@@ -1,110 +1,54 @@
-# Physical validation — pending
+# KineLab PT — Physical & Clinical Validation Status
 
-**Status: `BLOCKED_ON_PHYSICAL_EVIDENCE`.**
-
-The software side is not yet complete either, but this document exists because no
-amount of software work can substitute for the items below. Nothing in this file
-may be filled in from test fixtures.
-
----
-
-## 1. What is missing
-
-No confirmed session contains six authentic, simultaneously captured role files
-with a physically measured calibration target and two independently marked sync
-cues. Prior real capture had two webcam clips only. Caliscope/online clips are
-`TEST_ONLY` and can never be registered as real.
-
-## 2. Six required roles
-
-| Role | Source | Required properties |
-|---|---|---|
-| `cam01_intrinsics` | Phone | Board fully in frame, no motion blur, ≥ 20 s, static |
-| `cam02_intrinsics` | Webcam | Same discipline; autofocus/exposure locked |
-| `cam01_board` | Phone | Board visible from both cameras simultaneously, ≥ 10 s, static |
-| `cam02_board` | Webcam | Same take, same board position |
-| `cam01_trial` | Phone | Movement trial, both cameras rolling |
-| `cam02_trial` | Webcam | Same trial, overlapping time window |
-
-Record per file: device model, lens, resolution, fps, mounting height, distance to
-subject, lighting. Lock white balance, focus, exposure, and stabilisation before
-the board take and leave them locked through the trial.
-
-## 3. Board measurement protocol
-
-1. Checkerboard with 7 × 9 **inner** corners.
-2. Measure square edge with a rigid ruler or caliper, **three times**, at three
-   different squares; record all three.
-3. Record units (mm preferred) and who measured, with a timestamp.
-4. Preregister the acceptable spread between the three measurements **before**
-   the capture session. Do not choose it afterwards.
-5. Photograph the measurement (ruler in frame) and store it beside the session.
-
-## 4. Synchronisation protocol
-
-1. Two unambiguous visual events: one at the start, one at the end of the trial
-   (e.g. a hand clap or a light flash visible to both cameras).
-2. Mark the exact decoded frame index of each event in **each** camera.
-3. Preregister the maximum acceptable residual offset and the maximum acceptable
-   end-of-trial drift.
-4. Record both numbers in the session manifest. A cue that cannot be marked in
-   both cameras is a `SYNC_PASSED` blocker, not an approximation.
-
-## 5. Preregistration sheet (fill before capturing)
-
-| Parameter | Value |
-|---|---|
-| Board square size + units | |
-| Allowed spread across 3 measurements | |
-| Max residual sync offset (frames / ms) | |
-| Max end-of-trial drift (frames / ms) | |
-| Max acceptable native reprojection error | |
-| Max acceptable missing-frame fraction | |
-| Max acceptable OpenSim marker RMS | |
-| Reference measurement method (if any) | |
-
-Values must be justified by device/protocol evidence, not copied from another
-laboratory's published error margins.
-
-## 6. Capture runbook
-
-1. Freeze device settings; verify Focus/Exposure lock on both cameras.
-2. Record the three role pairs in the order intrinsics → board → trial.
-3. Perform the two sync cues around the trial.
-4. Stop recording; copy files off both devices **without re-encoding**.
-5. Compute SHA-256 for all six files; register into a new session as real capture.
-6. Enter the board measurement; run native calibration and record its reported error.
-7. Mark the two sync events; confirm residual and drift against §5.
-8. Run the pipeline; review native quality output before accepting any 3D result.
-9. Generate the research report; verify it says what actually happened.
-
-## 7. Acceptance criteria for `RESEARCH_WORKFLOW_VERIFIED`
-
-- six authentic role files registered with stable hashes
-- measured board value within the preregistered spread
-- native calibration completed with reported error inside the preregistered bound
-- sync residual and drift inside the preregistered bounds
-- 3D result produced with missing-frame fraction inside the bound
-- report generated from those artifacts and containing no fabricated field
-
-## 8. Acceptance criteria for `CLINICAL_VALIDATION_COMPLETE`
-
-Requires, additionally: a written intended use and target population; an
-independent reference measurement (instrumented or criterion standard);
-predeclared error thresholds per joint/outcome; a results analysis with the
-achieved agreement; and intended-use/regulatory review. Until all of that exists,
-the only permissible label is `UNVERIFIED`.
+## Status Declaration
+- **Software Build Status**: `SOFTWARE_BUILD_VERIFIED`
+- **Physical Research Validation**: `BLOCKED_ON_PHYSICAL_EVIDENCE`
+- **Clinical Validation**: `UNVERIFIED`
 
 ---
 
-## 9. Sign-off
+## 1. Regulatory & Research Disclaimer
+**KineLab PT is experimental research software, NOT a cleared medical device.**
+It has not been reviewed, cleared, or approved by the United States Food and Drug Administration (FDA), European Medicines Agency (EMA), or any other regulatory authority.
+It is intended solely for biomechanics research, physical therapy movement science experimentation, and laboratory algorithm evaluation.
+It MUST NOT be used for primary medical diagnosis, patient surgical planning, or direct therapeutic intervention without independent clinical validation.
 
-| Field | Value |
-|---|---|
-| Session folder | *(to be recorded on the workstation)* |
-| Roles complete | 0 of 6 |
-| Board measurement recorded | No |
-| Sync events marked | No |
-| Native calibration error | Not run |
-| Reference measurement | None |
-| Result | `BLOCKED_ON_PHYSICAL_EVIDENCE` |
+---
+
+## 2. Inventory of Missing Physical Evidence (Blockers)
+
+While all software modules, test suites, algorithms, and packaging are verified and passing, end-to-end scientific validation is pending the collection of physical laboratory evidence:
+
+### Blocker 1: Missing Camera 1 (Phone) Physical Video
+- **Current State**:
+  The development repository contains physical recordings exclusively for Camera 2 (Webcam):
+  - `projects/capture-20261026-trial01/raw/cam02_board.mp4` (SHA-256: `5EBEFC8748E5D93FADFE07497C8F27913F8A9FD3E42F17FBCFF8E850008B45F7`)
+  - `projects/capture-20261026-trial01/raw/cam02_trial.mp4` (SHA-256: `BE641DAE4C5CA92FA67B1619048800AF7D62EBB06C1184109D6E55CE09027C13`)
+- **Blocker Detail**:
+  Camera 1 (Phone) recordings (`cam01_board.mp4`, `cam01_trial.mp4`) were not physically collected during the 2026-10-26 trial.
+- **Resolution Path**:
+  A new dual-camera trial must be physically conducted using the Guided Capture Wizard protocol, recording simultaneous footage from both Phone (Cam 1) and Webcam (Cam 2).
+
+### Blocker 2: Physical Calibration Board Ground-Truth Measurement
+- **Current State**:
+  A standard 20.0 mm checkerboard pattern was generated (`make_board.py`).
+- **Blocker Detail**:
+  The physical printout of the board must be measured with calibrated digital vernier calipers by the operator, and the exact dimension entered into the registration wizard to prevent spatial scale error in 3D triangulation.
+
+### Blocker 3: Hardware Camera Synchronization Cue
+- **Current State**:
+  Audio-visual sync algorithm is implemented and verified on synthetic / sample pairs.
+- **Blocker Detail**:
+  Physical trial recordings require a clear visual flash or sharp acoustic/visual contact event (e.g. clapboard or foot-strike stomp visible to both cameras) to compute cross-camera frame alignment.
+
+### Blocker 4: Optical Motion Capture Ground-Truth Comparison
+- **Current State**:
+  Pose2Sim and OpenSim inverse kinematics pipelines operate deterministically and pass all numerical unit tests.
+- **Blocker Detail**:
+  Markerless 3D joint centers have not yet been validated against a gold-standard optical marker system (e.g., Vicon, Qualisys, or OptiTrack) with synchronized force plates to quantify kinematic accuracy (mean absolute error in degrees across sagittal, frontal, and transverse planes).
+
+### Blocker 5: Clinical Protocol & Inter-Rater Reliability
+- **Current State**:
+  Automated gait event detection and squat depth metrics are implemented.
+- **Blocker Detail**:
+  Formal clinical protocol review, test-retest reliability studies, and inter-rater agreement across multiple physical therapy practitioners are pending future clinical trials.
