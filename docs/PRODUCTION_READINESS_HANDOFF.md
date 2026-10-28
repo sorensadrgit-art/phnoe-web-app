@@ -2,7 +2,7 @@
 Prepared: 2026-10-28 (America/New_York)
 GitHub: https://github.com/sorensadrgit-art/phnoe-web-app (private)
 Baseline source: ffde4be70d0a501980d1d22aac3dea1c91006ff9
-Working branch: feat/kinelab-production-readiness-20261028 (local, not pushed)
+Working branch: feat/kinelab-production-readiness-20261028 (isolated feature branch; never merge to main without review and acceptance)
 Public web demo: https://kinelab-pt.vercel.app (synthetic demonstration; not a clinical service)
 
 ## User's intended outcome

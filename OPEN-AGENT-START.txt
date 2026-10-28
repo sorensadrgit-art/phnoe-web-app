@@ -3,7 +3,7 @@ KINELAB PT / PRODUCTION ENHANCEMENT
 Open the full source workspace:
 C:\Users\soren\Documents\Projects\KineLab-PT-Production-Agent-Workspace
 
-Read AGENTS.md and docs\PRODUCTION_READINESS_HANDOFF.md.
+Read AGENTS.md, docs\audits\KineLab_PT_Production_Readiness_Report.md, docs\implementation\MASTER_PLAN.md, docs\implementation\TASK_BOARD.md and docs\PRODUCTION_READINESS_HANDOFF.md.
 Current local branch: feat/kinelab-production-readiness-20261028
 Github remote: https://github.com/sorensadrgit-art/phnoe-web-app.git
 

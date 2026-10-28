@@ -11,5 +11,5 @@ if errorlevel 1 (
 echo KineLab PT / Isolated Production Agent Workspace
 echo Working directory: %CD%
 echo The existing Windows app and Vercel deployment must remain unchanged.
-codex "Open AGENTS.md and docs/PRODUCTION_READINESS_HANDOFF.md. Inspect this isolated Git branch and verify baseline tests. Perform SOREN P0 investigation and produce an evidence-based Plan Forge with acceptance gates for actual camera inference, offline packaging, scientific validity, and secure cloud architecture. Do not touch patient data, modify the original app, push to main, or deploy. Start by reporting current verified state, test outcomes and a scoped plan."
+codex "Read AGENTS.md, docs/audits/KineLab_PT_Production_Readiness_Report.md and docs/implementation/MASTER_PLAN.md, TASK_BOARD.md, TASK_CATALOG.md, VERIFICATION_LOG.md and DECISION_REGISTER.md. Compare HEAD with audited revision ffde4be7, reproduce baseline and complete M0. Prioritize truth, durability, containment and evidence. Do NOT modify the existing live app or patient data, push to main, deploy, or start application code fixes before the scoped plan is approved. Report the verified state, precise test outcomes and implementation proposal."
 endlocal
