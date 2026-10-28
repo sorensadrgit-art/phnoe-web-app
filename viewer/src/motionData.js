@@ -100,7 +100,7 @@ export function validateMotion(value){
    times.some(t=>Math.abs(ktimes[nearestIndex(ktimes,t)]-t)>tolerance+1e-9))
    fail('MOT time range/gaps have no nearby TRC match');
   const columnUnits=Object.fromEntries(kinematics.columns.slice(1).map(name=>[name,coordinateUnit(name,kinematics.inDegrees)]));
-  kinematics={...kinematics,columnTypes,columnUnits,timeTolerance:Math.min(tolerance,kinematics.timeTolerance??tolerance)};
+  kinematics={...kinematics,columnTypes,columnUnits,timeTolerance:Math.min(tolerance,kinematics.timeTolerance??tolerance),_times:ktimes};
  }
  if(value.schema==='kinelab.motion.v2'){
   if(typeof value.sessionId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(value.sessionId))fail('invalid sessionId');
@@ -113,20 +113,30 @@ export function validateMotion(value){
   const mode=kinematics===null?'marker-only':'kinematics';
   if(!object(value.quality)||value.quality.status!=='passed'||value.quality.mode!==mode)fail('missing passed stage quality/mode');
  }
- return {...value,kinematics};
+ return {...value,kinematics,_times:times};
 }
 
 // Hold the last observed sample, clamped at both ends. Never invent missing markers.
+// Bolt Optimization: Lazy memoization of frame timestamps (`_times`) avoids creating
+// new timestamp arrays on every single frame lookup during high-frequency playback (60-120 FPS).
 export function frameAtTime(motion,seconds){
  if(!finite(seconds))fail('playback time must be finite');
- return motion.frames[floorIndex(motion.frames.map(f=>f.t),seconds)];
+ const times = (motion?._times && motion._times.length === motion.frames?.length)
+   ? motion._times
+   : (motion._times = motion.frames.map(f => f.t));
+ return motion.frames[floorIndex(times,seconds)];
 }
 
+// Bolt Optimization: Lazy memoization of kinematics timestamp column (`_times`) avoids
+// allocating new row arrays per sample lookup during timeline angle series generation.
 export function angleDegrees(kinematics,columnName,seconds){
  if(!kinematics||!finite(seconds)||coordinateType(columnName)!=='angular')return null;
  const index=kinematics.columns.indexOf(columnName);
  if(index<1)return null;
- const times=kinematics.rows.map(row=>row[0]),rowIndex=nearestIndex(times,seconds);
+ const times = (kinematics?._times && kinematics._times.length === kinematics.rows?.length)
+   ? kinematics._times
+   : (kinematics._times = kinematics.rows.map(row => row[0]));
+ const rowIndex=nearestIndex(times,seconds);
  const tolerance=kinematics.timeTolerance??minInterval(times,0);
  if(Math.abs(times[rowIndex]-seconds)>tolerance+1e-9)return null;
  const value=kinematics.rows[rowIndex][index];
