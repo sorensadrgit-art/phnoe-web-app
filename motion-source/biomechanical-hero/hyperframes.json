@@ -11,5 +11,60 @@
   },
   "width": 2560,
   "height": 1440,
-  "fps": 60
+  "fps": 60,
+  "easings": {
+    "expressive": [0.16, 1, 0.3, 1],
+    "kinetic": [0.22, 1, 0.36, 1],
+    "technical": [0.4, 0, 0.2, 1]
+  },
+  "shots": [
+    {
+      "id": "shot-01",
+      "name": "Macro Bevel",
+      "startFrame": 0,
+      "endFrame": 180,
+      "startTimeSec": 0.0,
+      "endTimeSec": 3.0,
+      "cameraPosition": [0, 0.45, 1.2],
+      "cameraTarget": [0, 0.45, 0],
+      "fov": 32,
+      "easing": "expressive"
+    },
+    {
+      "id": "shot-02",
+      "name": "Kinetic Arc",
+      "startFrame": 180,
+      "endFrame": 450,
+      "startTimeSec": 3.0,
+      "endTimeSec": 7.5,
+      "cameraPosition": [0.8, 0.6, 1.4],
+      "cameraTarget": [0.1, 0.38, 0],
+      "fov": 38,
+      "easing": "kinetic"
+    },
+    {
+      "id": "shot-03",
+      "name": "Exploded View",
+      "startFrame": 450,
+      "endFrame": 720,
+      "startTimeSec": 7.5,
+      "endTimeSec": 12.0,
+      "cameraPosition": [0, 0.8, 1.8],
+      "cameraTarget": [0, 0.5, 0.15],
+      "fov": 42,
+      "easing": "expressive"
+    },
+    {
+      "id": "shot-04",
+      "name": "Isometric Lock",
+      "startFrame": 720,
+      "endFrame": 900,
+      "startTimeSec": 12.0,
+      "endTimeSec": 15.0,
+      "cameraPosition": [1.2, 1.0, 1.2],
+      "cameraTarget": [0, 0.4, 0],
+      "fov": 30,
+      "easing": "technical"
+    }
+  ]
 }
