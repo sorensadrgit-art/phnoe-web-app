@@ -159,6 +159,59 @@ class LiveSessionApiTests(unittest.TestCase):
         self.assertEqual(live_sess.get("kind"), "live")
         self.assertEqual(live_sess.get("status"), "completed")
 
+        # Verify session detail endpoint for live session: no missing multi-cam roles
+        d_status, d_resp = self.request("GET", "/api/v1/sessions/live-test-squat-01")
+        self.assertEqual(d_status, 200)
+        self.assertEqual(d_resp.get("kind"), "live")
+        self.assertEqual(d_resp.get("roles"), [])
+        self.assertEqual(d_resp.get("missing"), [])
+        self.assertEqual(d_resp.get("issues"), [])
+        self.assertFalse(d_resp.get("ready_to_register"))
+
+        # Verify report generation endpoint for live session
+        rep_status, rep_resp = self.request("POST", "/api/v1/sessions/live-test-squat-01/reports/generate", {"confirm": True})
+        self.assertEqual(rep_status, 201)
+        self.assertTrue(rep_resp.get("ok"))
+        self.assertIn("live-test-squat-01-research-report.pdf", rep_resp.get("generated", []))
+        self.assertIn("live-test-squat-01-research-summary.json", rep_resp.get("generated", []))
+
+        # Check generated summary JSON content
+        summary_path = session_folder / "exports" / "live-test-squat-01-research-summary.json"
+        self.assertTrue(summary_path.is_file())
+        sum_doc = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertEqual(sum_doc.get("schema"), "kinelab.live-biofeedback-report.v1")
+        self.assertEqual(sum_doc.get("kind"), "live")
+        self.assertEqual(sum_doc.get("exercise_type"), "squats")
+        self.assertEqual(sum_doc.get("total_reps"), 2)
+        self.assertEqual(sum_doc.get("valid_reps"), 1)
+
+        # Check generated PDF
+        pdf_path = session_folder / "exports" / "live-test-squat-01-research-report.pdf"
+        self.assertTrue(pdf_path.is_file())
+        self.assertTrue(len(pdf_path.read_bytes()) > 500)
+        self.assertTrue(pdf_path.read_bytes().startswith(b"%PDF"))
+
+    def test_exercise_trajectory_fallbacks(self):
+        for etype in ["lunges", "knee-extension", "balance"]:
+            sid = f"live-test-traj-{etype}"
+            payload = {
+                "session_id": sid,
+                "exercise_type": etype,
+                "patient_id": "PT-TRAJ-TEST",
+                "reps": [{"repNumber": 1, "durationMs": 1200, "peakDepth": 75.0, "valid": True}],
+                "summary_metrics": {"totalReps": 1, "validReps": 1, "averageDepth": 75.0},
+            }
+            status, resp = self.request("POST", "/api/v1/sessions/live-set", payload)
+            self.assertEqual(status, 201)
+            self.assertTrue(resp.get("ok"))
+
+            m_status, m_resp = self.request("GET", f"/api/v1/sessions/{sid}/motion")
+            self.assertEqual(m_status, 200)
+            frames = m_resp.get("frames", [])
+            self.assertTrue(len(frames) > 0)
+            # 22 markers per frame
+            self.assertEqual(len(frames[0]["xyz"]), 22)
+
 
 if __name__ == "__main__":
     unittest.main()

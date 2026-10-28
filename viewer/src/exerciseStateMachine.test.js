@@ -186,4 +186,17 @@ test('Single-Leg Balance tracking accumulates hold duration and detects trunk sw
   time += 100;
   state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 50, trunkLean: 32 }, time);
   assert.ok(state.currentFaults.includes(FAULT_CODES.EXCESSIVE_TRUNK_LEAN));
+
+  // Foot placed down -> completes hold rep
+  time += 4000; // Total hold duration ~4400ms
+  state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 10 }, time);
+  assert.equal(state.phase, PHASES.READY);
+  assert.equal(state.repCount, 1);
+  assert.equal(state.reps.length, 1);
+  assert.ok(state.reps[0].durationMs >= 4000);
+
+  // Finishing set accumulates balance summary
+  const summary = tracker.finishSet();
+  assert.equal(summary.totalReps, 1);
+  assert.ok(summary.averageDepth > 0);
 });

@@ -82,6 +82,7 @@ export default function ReportStudio({
             <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
               <option value="all">All Sessions</option>
               <option value="real">Real Captures</option>
+              <option value="live">Live Biofeedback</option>
               <option value="test-only">Test-Only Samples</option>
               <option value="demo">Demo Sessions</option>
             </select>

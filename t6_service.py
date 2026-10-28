@@ -93,15 +93,28 @@ class IntegratedService:
         with self.mutex:
             path = self._project(session_id)
             info = self.library.describe_session(session_id)
-            roles = [{
-                "role": role, "instruction": ROLE_GUIDE[role],
-                "camera": "phone" if role.startswith("cam01") else "webcam",
-                "file_present": (path / "raw" / (role + ".mp4")).is_file(),
-                "record_seconds": RECOMMENDED_SECONDS.get(role),
-            } for role in RAW_ROLES]
-            if info["can_register"]:
+            if info["kind"] == "live":
+                roles = []
+                readiness = {
+                    "ready_to_register": False,
+                    "missing": [],
+                    "issues": [],
+                }
+            elif info["can_register"]:
+                roles = [{
+                    "role": role, "instruction": ROLE_GUIDE[role],
+                    "camera": "phone" if role.startswith("cam01") else "webcam",
+                    "file_present": (path / "raw" / (role + ".mp4")).is_file(),
+                    "record_seconds": RECOMMENDED_SECONDS.get(role),
+                } for role in RAW_ROLES]
                 readiness = self.library.registration_readiness(session_id)
             else:
+                roles = [{
+                    "role": role, "instruction": ROLE_GUIDE[role],
+                    "camera": "phone" if role.startswith("cam01") else "webcam",
+                    "file_present": (path / "raw" / (role + ".mp4")).is_file(),
+                    "record_seconds": RECOMMENDED_SECONDS.get(role),
+                } for role in RAW_ROLES]
                 readiness = {
                     "ready_to_register": False,
                     "missing": [role for role in RAW_ROLES if not (path / "raw" / (role + ".mp4")).is_file()],
@@ -573,11 +586,17 @@ created_at_utc = "{now_iso}"
 
             # Generate .motion.json for 3D viewer & report generation
             frames = payload.get("frames", [])
-            if not frames:
+            valid_frames = (
+                isinstance(frames, list)
+                and len(frames) > 0
+                and isinstance(frames[0], dict)
+                and "xyz" in frames[0]
+            )
+            if not valid_frames:
                 # Generate synthetic motion trajectory for the completed reps
                 fps = 30.0
                 frames = []
-                frame_count = max(60, total_reps * 60)
+                frame_count = max(60, total_reps * 60) if total_reps > 0 else 120
                 base_xyz = [
                     [0.0, 0.9, 0.0],
                     [-0.08, 0.88, 0.0],
@@ -602,19 +621,76 @@ created_at_utc = "{now_iso}"
                     [0.28, 1.12, 0.0],
                     [0.35, 0.88, 0.0],
                 ]
-                for f_idx in range(frame_count):
-                    t = round(f_idx / fps, 4)
-                    cycle_progress = (f_idx % 60) / 60.0
-                    squat_depth = (1.0 - math.cos(cycle_progress * 2 * math.pi)) / 2.0 * 0.35
-                    f_xyz = []
-                    for m_idx, (bx, by, bz) in enumerate(base_xyz):
-                        if m_idx in (0, 1, 7, 13, 14, 15, 16, 17, 18, 19, 20, 21):
-                            f_xyz.append([bx, round(by - squat_depth, 4), bz])
-                        elif m_idx in (2, 8):
-                            f_xyz.append([bx, round(by - squat_depth * 0.5, 4), round(bz + squat_depth * 0.4, 4)])
-                        else:
-                            f_xyz.append([bx, by, bz])
-                    frames.append({"t": t, "xyz": f_xyz})
+                if exercise_type == "lunges":
+                    for f_idx in range(frame_count):
+                        t = round(f_idx / fps, 4)
+                        cycle_progress = (f_idx % 60) / 60.0
+                        lunge_depth = (1.0 - math.cos(cycle_progress * 2 * math.pi)) / 2.0 * 0.30
+                        f_xyz = []
+                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
+                            if m_idx in (0, 1, 7, 13, 14, 15, 16, 17, 18, 19, 20, 21):
+                                f_xyz.append([bx, round(by - lunge_depth, 4), bz])
+                            elif m_idx == 2:  # RKnee (lead leg)
+                                f_xyz.append([bx, round(by - lunge_depth * 0.5, 4), round(bz + lunge_depth * 0.35, 4)])
+                            elif m_idx == 8:  # LKnee (trailing leg)
+                                f_xyz.append([bx, round(by - lunge_depth * 0.8, 4), round(bz - lunge_depth * 0.25, 4)])
+                            elif m_idx in (9, 10, 11, 12):  # LFoot (trailing heel lifts)
+                                f_xyz.append([bx, round(by + lunge_depth * 0.08, 4), bz])
+                            else:
+                                f_xyz.append([bx, by, bz])
+                        frames.append({"t": t, "xyz": f_xyz})
+                elif exercise_type == "knee-extension":
+                    for f_idx in range(frame_count):
+                        t = round(f_idx / fps, 4)
+                        cycle_progress = (f_idx % 60) / 60.0
+                        ext = (1.0 - math.cos(cycle_progress * 2 * math.pi)) / 2.0
+                        f_xyz = []
+                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
+                            if m_idx in (0, 1, 7):
+                                f_xyz.append([bx, 0.55, bz])
+                            elif m_idx in (13, 14, 15, 16, 17, 18, 19, 20, 21):
+                                f_xyz.append([bx, round(by - 0.35, 4), bz])
+                            elif m_idx == 2:  # RKnee
+                                f_xyz.append([bx, 0.55, 0.35])
+                            elif m_idx in (3, 4, 5, 6):  # RLeg kicks forward
+                                cur_y = round(0.12 + ext * 0.38, 4)
+                                cur_z = round(ext * 0.35, 4)
+                                f_xyz.append([bx, cur_y, cur_z])
+                            elif m_idx == 8:  # LKnee
+                                f_xyz.append([bx, 0.55, 0.35])
+                            else:
+                                f_xyz.append([bx, by, bz])
+                        frames.append({"t": t, "xyz": f_xyz})
+                elif exercise_type == "balance":
+                    for f_idx in range(frame_count):
+                        t = round(f_idx / fps, 4)
+                        cycle_progress = (f_idx % 60) / 60.0
+                        sway = math.sin(cycle_progress * 4 * math.pi) * 0.015
+                        f_xyz = []
+                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
+                            if m_idx in (8,):  # LKnee lifted
+                                f_xyz.append([bx, round(by + 0.18, 4), round(bz - 0.10, 4)])
+                            elif m_idx in (9, 10, 11, 12):  # LFoot raised off ground
+                                f_xyz.append([bx, round(by + 0.25, 4), round(bz - 0.15, 4)])
+                            elif m_idx in (13, 14, 15):  # Torso sway
+                                f_xyz.append([round(bx + sway, 4), by, bz])
+                            else:
+                                f_xyz.append([bx, by, bz])
+                        frames.append({"t": t, "xyz": f_xyz})
+                else:  # squats default
+                    for f_idx in range(frame_count):
+                        t = round(f_idx / fps, 4)
+                        cycle_progress = (f_idx % 60) / 60.0
+                        squat_depth = (1.0 - math.cos(cycle_progress * 2 * math.pi)) / 2.0 * 0.35
+                        f_xyz = []
+                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
+                            if m_idx in (0, 1, 7, 13, 14, 15, 16, 17, 18, 19, 20, 21):
+                                f_xyz.append([bx, round(by - squat_depth, 4), bz])
+                            elif m_idx in (2, 8):
+                                f_xyz.append([bx, round(by - squat_depth * 0.5, 4), round(bz + squat_depth * 0.4, 4)])
+                            else:
+                                f_xyz.append([bx, by, bz])
+                        frames.append({"t": t, "xyz": f_xyz})
 
             motion_doc = {
                 "schema": "kinelab.motion.v1",
