@@ -23,6 +23,7 @@ function About({section,reduced,onNavigate}:Props) {
   const [active,setActive]=useState(0);
   const labels=['Background','Values','Focus','Now'];
   return <div className="ex-about-layout"><div className="ex-about-stage">
+    <div className="ex-hud-overlay" aria-hidden="true"><span className="ex-hud-tag">+ REC // BIO-TELEMETRY</span><span className="ex-hud-coords">KINETIC 60 FPS</span></div>
     <Film id="about" reduced={reduced}/><div className="ex-atlas-caption"><span>FIELD NOTE / 0{active+1}</span><strong>{['The person.','The principles.','The intersection.','In progress.'][active]}</strong></div>
     <div className="ex-atlas-index" aria-hidden="true">{labels.map((name,i)=><span key={name} className={active===i?'is-active':''}>{String(i+1).padStart(2,'0')} {name}</span>)}</div>
   </div><div className="ex-about-story"><p className="ex-kicker">A PRACTICE IN TWO WORLDS</p><h2>Movement.<br/><em>Imagination.</em><br/>Possibility.</h2>
@@ -37,9 +38,12 @@ function Experience({section,reduced}:Props) {
   const rail=useRef<HTMLDivElement>(null);
   const labels=['Arcadia Hybrid Lab','Creative development','U.S. Army','Clinical education'];
   const select=(index:number)=>{setActive(index);rail.current?.querySelector<HTMLElement>('[data-role="'+index+'"]')?.scrollIntoView({block:'nearest',behavior:reduced?'instant':'smooth'});};
-  return <div className="ex-experience-layout"><div className="ex-role-visual"><Film id="experience" reduced={reduced}/>
+  return <div className="ex-experience-layout"><div className="ex-role-visual">
+    <div className="ex-hud-overlay" aria-hidden="true"><span className="ex-hud-tag">+ LOG // CAREER SEQUENCE</span><span className="ex-hud-coords">CHAPTER: 0{active+1}</span></div>
+    <Film id="experience" reduced={reduced}/>
     <div className="ex-role-plaque"><span>CHAPTER / 0{active+1}</span><TransitionPanel active={active} reduced={reduced}><strong>{labels[active]}</strong><p>{['Supporting the learning environment.','Building with code and motion.','A background in service.','Developing clinical foundations.'][active]}</p></TransitionPanel></div>
   </div><div className="ex-role-story"><p className="ex-kicker">FOUR CONNECTED CHAPTERS</p>
+    <div className="ex-role-timeline" aria-hidden="true"><div className="ex-role-timeline-fill" style={{width:`${((active+1)/4)*100}%`}}/></div>
     <div className="ex-role-index" aria-label="Experience chapters">{labels.map((name,i)=><button key={name} type="button" aria-current={active===i?'step':undefined} onClick={()=>select(i)}><span>0{i+1}</span>{name}</button>)}</div>
     <div ref={rail} className="ex-role-scroll" tabIndex={0} aria-label="Experience detail" data-local-keys onKeyDown={e=>{
       if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();e.stopPropagation();select(Math.max(0,Math.min(3,active+(e.key==='ArrowDown'?1:-1))));}
@@ -54,6 +58,7 @@ function Education({section,reduced}:Props) {
   const [active,setActive]=useState(0),[separation,setSeparation]=useState(0),[rotation,setRotation]=useState(0),[zoom,setZoom]=useState(1),[reset,setReset]=useState(0);
   const layers=['all','bone','muscle','tendon'];
   return <div className="ex-education-layout"><div className="ex-anatomy-stage">
+    <div className="ex-hud-overlay" aria-hidden="true"><span className="ex-hud-tag">+ 3D ANATOMY ATLAS</span><span className="ex-hud-coords">LAYER: {layers[active].toUpperCase()}</span></div>
     {live&&!failed?<><Suspense fallback={<Film id="education" reduced/>}><LiveStudy kind="anatomy" layer={layers[active]} separation={separation} rotation={rotation} zoom={zoom} reset={reset} onReady={()=>setReady(true)} onFailure={()=>{setFailed(true);setLive(false);}}/></Suspense>
       <div className="ex-stage-stamp"><span>ANATOMY STUDY</span><strong>{ready?['All layers','Bone','Muscle','Tendon'][active]:'Loading study…'}</strong></div></>:<Film id="education" reduced={reduced}/>}
     <button type="button" className="ex-explore-button" onClick={()=>{setFailed(false);setLive(!live);setReady(false);}}>{live?'Return to film':'Explore in 3D'} <span aria-hidden="true">↗</span></button>
@@ -80,7 +85,9 @@ function MotionDemo({reduced}:{reduced:boolean}) {
     raf=requestAnimationFrame(tick);const visible=()=>{last=0;if(document.hidden){cancelAnimationFrame(raf);}else raf=requestAnimationFrame(tick);};document.addEventListener('visibilitychange',visible);
     return()=>{cancelAnimationFrame(raf);document.removeEventListener('visibilitychange',visible);};
   },[playing,info]);
-  return <div className="ex-demo"><div className="ex-demo-stage">{live&&!failed?<Suspense fallback={<Film id="projects" reduced/>}><LiveStudy kind="motion" frame={frame} view={view} reset={reset} onReady={(count,fps)=>setInfo({count,fps})} onFailure={()=>{setFailed(true);setLive(false);setPlaying(false);}}/></Suspense>:<Film id="biomech" reduced={reduced}/>}
+  return <div className="ex-demo"><div className="ex-demo-stage">
+    <div className="ex-hud-overlay" aria-hidden="true"><span className="ex-hud-tag">+ MOTION VIEWER</span><span className="ex-hud-coords">FRAME: {frame + 1}</span></div>
+    {live&&!failed?<Suspense fallback={<Film id="projects" reduced/>}><LiveStudy kind="motion" frame={frame} view={view} reset={reset} onReady={(count,fps)=>setInfo({count,fps})} onFailure={()=>{setFailed(true);setLive(false);setPlaying(false);}}/></Suspense>:<Film id="biomech" reduced={reduced}/>}
     {!live&&<button type="button" className="ex-explore-button" onClick={()=>{setFailed(false);setLive(true);}}>Open motion viewer <span aria-hidden="true">↗</span></button>}
     </div><span className="ex-demo-badge">DEMO EXPORT / ACCURACY UNVERIFIED</span>
     {live&&<div className="ex-demo-controls"><div className="ex-control-row"><button type="button" disabled={!info.count} onClick={()=>setPlaying(!playing)}>{playing?'Pause':'Play'} motion</button><button type="button" aria-pressed={view==='front'} onClick={()=>setView('front')}>Front</button><button type="button" aria-pressed={view==='side'} onClick={()=>setView('side')}>Side</button><button type="button" onClick={()=>{setPlaying(false);setFrame(0);setView('front');setReset(v=>v+1);}}>Reset</button><button type="button" onClick={()=>{setLive(false);setPlaying(false);}}>Film</button></div>
@@ -98,7 +105,13 @@ function StepprStudy(){const [night,setNight]=useState(false);return <div classN
 
 function BiomechanicalLabStage({reduced}:{reduced:boolean}) {
   const [open,setOpen]=useState(false);
-  return <div className="ex-biomech-stage"><Film id="projects" reduced={reduced}/><div className="ex-stage-stamp"><span>PROJECT 05 · biomech-lab</span><strong>Biomechanical Cybernetic Lab</strong></div><button type="button" className="ex-explore-button" onClick={()=>setOpen(true)}>Open 3D laboratory <span aria-hidden="true">↗</span></button>{open&&<Suspense fallback={null}><BiomechanicalLabProject isOpen={open} onClose={()=>setOpen(false)}/></Suspense>}</div>;
+  return <div className="ex-biomech-stage">
+    <div className="ex-hud-overlay" aria-hidden="true"><span className="ex-hud-tag">+ CYBERNETIC LAB</span><span className="ex-hud-coords">TELEMETRY MATRIX</span></div>
+    <Film id="projects" reduced={reduced}/>
+    <div className="ex-stage-stamp"><span>PROJECT 05 · biomech-lab</span><strong>Biomechanical Cybernetic Lab</strong></div>
+    <button type="button" className="ex-explore-button" onClick={()=>setOpen(true)}>Open 3D laboratory <span aria-hidden="true">↗</span></button>
+    {open&&<Suspense fallback={null}><BiomechanicalLabProject isOpen={open} onClose={()=>setOpen(false)}/></Suspense>}
+  </div>;
 }
 
 function ResumeStudy({reduced}:{reduced:boolean}) {
