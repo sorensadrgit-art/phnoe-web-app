@@ -104,6 +104,7 @@ export default function LiveTrackerStudio({
   token,
   onSessionCreated,
   apiPrefix = '/api/v1',
+  demoMode = false,
 }) {
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState('');
@@ -113,7 +114,7 @@ export default function LiveTrackerStudio({
   const [targetROM, setTargetROM] = useState(80);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [isTracking, setIsTracking] = useState(true);
-  const [isSimulated, setIsSimulated] = useState(false);
+  const [isSimulated, setIsSimulated] = useState(demoMode);
   const [cameraError, setCameraError] = useState(null);
 
   // Completed set summary modal
@@ -153,6 +154,7 @@ export default function LiveTrackerStudio({
 
   // Enumerate Camera Devices
   useEffect(() => {
+    if (demoMode) return;
     async function getDevices() {
       try {
         if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -167,14 +169,14 @@ export default function LiveTrackerStudio({
       }
     }
     getDevices();
-  }, [selectedCamera]);
+  }, [selectedCamera, demoMode]);
 
   // Start Camera Stream
   useEffect(() => {
     let cancelled = false;
 
     async function startCamera() {
-      if (isSimulated) return;
+      if (isSimulated || demoMode) return;
       setCameraError(null);
 
       // Stop existing tracks
@@ -223,7 +225,7 @@ export default function LiveTrackerStudio({
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
     };
-  }, [selectedCamera, isSimulated]);
+  }, [selectedCamera, isSimulated, demoMode]);
 
   // Dynamic viewport measurement for responsive HUD overlay
   useEffect(() => {
@@ -524,14 +526,18 @@ export default function LiveTrackerStudio({
             Chimes {audioEnabled ? 'ON' : 'OFF'}
           </button>
 
-          <button
-            type="button"
-            className={`uw-live-btn-toggle ${isSimulated ? 'is-active' : ''}`}
-            onClick={() => setIsSimulated(!isSimulated)}
-            title="Toggle between physical webcam and synthetic biomechanical test stream"
-          >
-            Feed: {isSimulated ? 'Synthetic Test' : 'Live Camera'}
-          </button>
+          {demoMode ? (
+            <span className="uw-live-btn-toggle is-active" role="status">Feed: Synthetic demo only</span>
+          ) : (
+            <button
+              type="button"
+              className={`uw-live-btn-toggle ${isSimulated ? 'is-active' : ''}`}
+              onClick={() => setIsSimulated(!isSimulated)}
+              title="Toggle between physical webcam and synthetic biomechanical test stream"
+            >
+              Feed: {isSimulated ? 'Synthetic Test' : 'Live Camera'}
+            </button>
+          )}
         </div>
 
         <div className="uw-live-control-group">
@@ -625,7 +631,8 @@ export default function LiveTrackerStudio({
       {showSummary && (
         <LiveSetSummaryModal
           summary={setSummary}
-          onSaveToSessions={handleSaveToSessions}
+          onSaveToSessions={demoMode ? undefined : handleSaveToSessions}
+          demoMode={demoMode}
           onExportJSON={handleExportJSON}
           onClose={() => setShowSummary(false)}
           onStartNewSet={handleStartNewSet}

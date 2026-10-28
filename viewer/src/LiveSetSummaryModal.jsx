@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 export default function LiveSetSummaryModal({
   summary,
   onSaveToSessions,
+  demoMode = false,
   onExportJSON,
   onClose,
   onStartNewSet,
@@ -170,8 +171,8 @@ export default function LiveSetSummaryModal({
             )}
           </div>
 
-          {/* Ingestion & Patient Config */}
-          <div style={{ background: '#131e36', padding: '14px 16px', borderRadius: 8, border: '1px solid rgba(0, 243, 255, 0.15)' }}>
+          {/* Local-only patient/subject record field */}
+          {!demoMode && <div style={{ background: '#131e36', padding: '14px 16px', borderRadius: 8, border: '1px solid rgba(0, 243, 255, 0.15)' }}>
             <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: 6 }}>
               PATIENT / SUBJECT RECORD ID
             </label>
@@ -191,7 +192,11 @@ export default function LiveSetSummaryModal({
                 outline: 'none',
               }}
             />
-          </div>
+          </div>}
+
+          {demoMode && <p role="note" style={{color:'#facc8e',fontSize:12,lineHeight:1.6}}>
+            Synthetic example only. These metrics do not describe measured human movement or clinical performance. Nothing has been saved to a server.
+          </p>}
 
           {saveResult && (
             <div style={{
@@ -252,7 +257,7 @@ export default function LiveSetSummaryModal({
               Start New Set
             </button>
 
-            <button
+            {!demoMode && <button
               type="button"
               onClick={() => onSaveToSessions(patientId)}
               disabled={isSaving}
@@ -271,7 +276,7 @@ export default function LiveSetSummaryModal({
               }}
             >
               {isSaving ? 'Saving...' : 'Save to KineLab Sessions'}
-            </button>
+            </button>}
           </div>
         </div>
       </div>

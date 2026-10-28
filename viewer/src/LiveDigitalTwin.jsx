@@ -3,6 +3,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Grid, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 
+// Major MediaPipe joints used by the HUD and 3D avatar.
+const MAJOR_JOINTS = new Set([11, 12, 23, 24, 25, 26, 27, 28]);
+
 const MP_CONNECTIONS = [
   [11, 12], // LShoulder - RShoulder
   [11, 23], // LShoulder - LHip
@@ -100,7 +103,7 @@ function AvatarRig({ landmarks, mirrored = true, targetROM = 80, currentDepth = 
     <group>
       {/* 33 Joint Nodes */}
       {Array.from({ length: 33 }).map((_, i) => {
-        const isMajor = MAJOR_JOINTS.includes(i);
+        const isMajor = MAJOR_JOINTS.has(i);
         const radius = isMajor ? 0.032 : 0.018;
         return (
           <mesh key={`joint-${i}`} ref={(el) => (jointsRef.current[i] = el)}>
