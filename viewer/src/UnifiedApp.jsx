@@ -41,6 +41,9 @@ function Field({label,children}){return <label className="uw-field"><span>{label
 
 export default function UnifiedApp(){
  const token=useMemo(()=>readAccessToken(window.location.hash),[]);
+ const activeToken=useMemo(()=>{
+  return token || (typeof localStorage!=='undefined'&&localStorage.getItem('kinelab_t6_token')) || '';
+ },[token]);
  const [view,setViewState]=useState(()=>{
   try{return localStorage.getItem('kinelab_active_tab')||'overview'}catch{return 'overview'}
  });
@@ -78,8 +81,9 @@ export default function UnifiedApp(){
  const show=(text,type='info')=>setNotice({text:String(text),type});
 
  const api=useCallback(async(path,{method='GET',body=null,binary=false}={})=>{
-  if(!token)throw Error('Open KineLab PT using its single desktop icon to authorize the local workspace.');
-  const headers={Authorization:'Bearer '+token};
+  const tok=activeToken;
+  if(!tok)throw Error('Open KineLab PT using its single desktop icon to authorize the local workspace.');
+  const headers={Authorization:'Bearer '+tok};
   if(!binary && body!==null)headers['Content-Type']='application/json';
   if(binary){headers['Content-Type']='video/mp4';headers['X-KineLab-Consent']='yes';}
   const response=await fetch(path,{method,headers,
@@ -90,7 +94,7 @@ export default function UnifiedApp(){
    throw Error(msg);
   }
   return response;
- },[token]);
+ },[activeToken]);
  const json=useCallback(async(path,options)=>await (await api(path,options)).json(),[api]);
 
  const refreshSessions=useCallback(async()=>{
@@ -141,19 +145,25 @@ export default function UnifiedApp(){
   const tick=()=>refreshSelected(selected).catch(()=>{});
   const id=setInterval(tick,3500);
   return ()=>clearInterval(id);
- },[selected,token,refreshSelected]);
+ },[selected,activeToken,refreshSelected]);
 
  useEffect(()=>{
-  if(!token)return;
+  const tok=activeToken;
+  if(!tok){
+   setConnected(false);
+   return;
+  }
+  let unmounted=false;
   const ping=async()=>{
    try{
-    const res=await fetch(API+'/health',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
-    setConnected(res.ok);
-   }catch{setConnected(false)}
+    const res=await fetch(API+'/health',{headers:{Authorization:'Bearer '+tok},cache:'no-store'});
+    if(!unmounted)setConnected(res.ok);
+   }catch{if(!unmounted)setConnected(false)}
   };
-  const timer=setInterval(ping,10000);
-  return ()=>clearInterval(timer);
- },[token]);
+  ping();
+  const timer=setInterval(ping,5000);
+  return ()=>{unmounted=true;clearInterval(timer);};
+ },[activeToken]);
 
  const shutdownServer=async()=>{
   if(!confirmAction('Are you sure you want to stop the local KineLab service? You can restart it anytime via the desktop shortcut.'))return;
@@ -467,7 +477,7 @@ export default function UnifiedApp(){
       </div>
      </>}
 
-     {view==='motion'&&<div className="uw-motion-slot"><MotionApp sessionId={selected} token={token}/></div>}
+     {view==='motion'&&<div className="uw-motion-slot"><MotionApp sessionId={selected} token={activeToken}/></div>}
 
      {view==='analysis'&&<>
       <div className="uw-two">

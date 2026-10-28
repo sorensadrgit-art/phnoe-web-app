@@ -7,6 +7,7 @@ secret in a browser URL fragment, never in a query string or server access log.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import secrets
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import webbrowser
@@ -25,6 +27,9 @@ STATE = LOCAL / "t6-instance.json"
 LOG = LOCAL / "t6-server.log"
 PORTS = range(4184, 4204)
 SCHEMA = "kinelab.t6.instance.v1"
+
+_SERVER_INSTANCE = None
+_SERVER_RUNNING = threading.Event()
 
 
 def port_free(port: int) -> bool:
@@ -111,7 +116,8 @@ def _save_state(instance: dict):
         staging.unlink(missing_ok=True)
 
 
-def ensure_running() -> tuple[str, bool]:
+def ensure_running(*, detached: bool = False) -> tuple[str, bool]:
+    global _SERVER_INSTANCE, _SERVER_RUNNING
     current = read_state()
     if current and verified_running(current):
         return ("http://127.0.0.1:" + str(current["port"]) + "/#access=" + current["token"]), False
@@ -128,44 +134,96 @@ def ensure_running() -> tuple[str, bool]:
             except OSError:
                 pass
     chosen = choose_available_port()
-    state = {"schema": SCHEMA, "port": chosen,
-             "token": secrets.token_hex(32), "created_by": "local_single_icon_launcher"}
+    token = secrets.token_hex(32)
+    state = {
+        "schema": SCHEMA,
+        "port": chosen,
+        "token": token,
+        "created_by": "local_single_icon_launcher"
+    }
     _save_state(state)
-    pythonw = ROOT / ".venv" / "Scripts" / "pythonw.exe"
-    interpreter = pythonw if pythonw.is_file() else Path(sys.executable)
-    creationflags = (
-        getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
-        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-    )
-    process = subprocess.Popen([
-        str(interpreter), str(ROOT / "t6_server.py"),
-        "--port", str(chosen), "--state", str(STATE),
-    ], cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-    creationflags=creationflags)
+    target_url = f"http://127.0.0.1:{chosen}/#access={token}"
+
+    if detached:
+        # Spawn external background process if specifically requested
+        pythonw = ROOT / ".venv" / "Scripts" / "pythonw.exe"
+        interpreter = pythonw if pythonw.is_file() else Path(sys.executable)
+        creationflags = (
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+        )
+        process = subprocess.Popen([
+            str(interpreter), str(ROOT / "t6_server.py"),
+            "--port", str(chosen), "--state", str(STATE),
+        ], cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags)
+        for _ in range(60):
+            if verified_running(state):
+                return target_url, True
+            if process.poll() is not None:
+                raise RuntimeError("Unified localhost service exited early; see local KineLabPT server log")
+            time.sleep(0.20)
+        raise TimeoutError("Unified localhost service did not accept its session token")
+
+    # By default, run server directly in-process to guarantee rock-solid lifecycle
+    from t6_server import make_server
+    from t6_service import IntegratedService
+    service = IntegratedService()
+    server = make_server(service, token=token, port=chosen)
+    _SERVER_INSTANCE = server
+    _SERVER_RUNNING.set()
+
+    def _serve():
+        try:
+            server.serve_forever(poll_interval=0.5)
+        finally:
+            _SERVER_RUNNING.clear()
+            server.server_close()
+            try:
+                STATE.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    server_thread = threading.Thread(target=_serve, daemon=True, name="KineLabServer")
+    server_thread.start()
+
     for _ in range(60):
         if verified_running(state):
-            return ("http://127.0.0.1:" + str(chosen) + "/#access=" + state["token"]), True
-        if process.poll() is not None:
-            raise RuntimeError("Unified localhost service exited early; see local KineLabPT server log")
-        time.sleep(0.20)
-    raise TimeoutError("Unified localhost service did not accept its session token")
+            return target_url, True
+        time.sleep(0.10)
+    raise TimeoutError("Unified localhost service did not initialize in time")
 
 
 def main():
     parser = argparse.ArgumentParser(description="KineLab PT unified desktop launcher")
     parser.add_argument("--no-browser", action="store_true", help="Start/verify without opening the page")
+    parser.add_argument("--detached", "--no-wait", action="store_true", help="Launch detached subprocess without waiting")
     args = parser.parse_args()
     try:
-        url, fresh = ensure_running()
+        url, fresh = ensure_running(detached=getattr(args, "detached", False))
+        safe = url.split("#", 1)[0]
         if args.no_browser:
-            # Deliberately omit the URL fragment (the secret access token).
-            safe = url.split("#", 1)[0]
             print("T6_UNIFIED_READY=" + safe)
             print("T6_NEW_SERVER=" + str(fresh))
-        elif not webbrowser.open(url, new=2):
-            raise RuntimeError("Unable to open default browser to the local KineLab app")
+        else:
+            if not webbrowser.open(url, new=2):
+                raise RuntimeError("Unable to open default browser to the local KineLab app")
+            print("T6_UNIFIED_READY=" + safe)
+
+        if fresh and not getattr(args, "detached", False):
+            print(f"KineLab PT server running on {safe}")
+            print("Ready for motion capture and analysis. Keep this process running or press Ctrl+C to shut down.")
+            try:
+                while _SERVER_RUNNING.is_set():
+                    _SERVER_RUNNING.wait(timeout=0.5)
+            except KeyboardInterrupt:
+                print("\nShutting down KineLab PT cleanly...")
+                if _SERVER_INSTANCE:
+                    _SERVER_INSTANCE.shutdown()
+                    _SERVER_INSTANCE.server_close()
+                STATE.unlink(missing_ok=True)
         return 0
     except Exception as error:
         LOCAL.mkdir(parents=True, exist_ok=True)

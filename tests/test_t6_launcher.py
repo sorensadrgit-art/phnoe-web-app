@@ -48,6 +48,14 @@ class LauncherTests(unittest.TestCase):
         with patch("t6_launcher.get_health", side_effect=OSError("Connection refused")):
             self.assertFalse(verified_running(state))
 
+    def test_ensure_running_reuses_existing_verified_instance(self):
+        with patch("t6_launcher.read_state", return_value={"port": 4184, "token": "c"*64, "schema": "kinelab.t6.instance.v1"}):
+            with patch("t6_launcher.verified_running", return_value=True):
+                from t6_launcher import ensure_running
+                url, fresh = ensure_running()
+                self.assertFalse(fresh)
+                self.assertEqual(url, f"http://127.0.0.1:4184/#access={'c'*64}")
+
 
 if __name__=="__main__":
     unittest.main()
