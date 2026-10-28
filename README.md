@@ -68,8 +68,8 @@ http://127.0.0.1:4184/#access=<64-character-token>
 
 > **Fast Reuse**: If KineLab PT is already running, launching it again detects the active instance in under 0.2s, opens a browser tab, and exits cleanly without spawning duplicate processes.
 
-## SOREN résumé example
+## SOREN portfolio location
 
-The latest independent portfolio copy is [Motion Exhibits v7](examples/soren-motion-v7/README.md). It includes a self-contained browser demo and editable Remotion/HyperFrames sources. Its rendered art and attributed study asset are scoped to that example; the earlier v4 copy is preserved.
+The Open Design résumé, motion films, and editable portfolio sources are maintained in https://github.com/sorensadrgit-art/profolio-open.
 
 Private repository. Do not publish or redistribute sample research footage without confirming its rights.
