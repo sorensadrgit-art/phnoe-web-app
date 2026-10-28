@@ -2,6 +2,7 @@ import React from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
 import { getActiveShot, BIOMECH_HERO_CONFIG } from './BiomechHeroFilm.mjs';
 import { TelemetryOverlay } from '../components/TelemetryOverlay';
+import { ThreeCanvasBridge } from '../components/ThreeCanvasBridge';
 
 export const BiomechHeroComposition: React.FC = () => {
   const frame = useCurrentFrame();
@@ -20,6 +21,9 @@ export const BiomechHeroComposition: React.FC = () => {
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="w-full h-full bg-gradient-to-tr from-black via-slate-950 to-slate-900" />
       </div>
+
+      {/* Deterministic Three.js WebGL 3D Mesh Engine */}
+      <ThreeCanvasBridge frame={frame} />
 
       {/* Synchronized Telemetry Graphic Overlay */}
       <TelemetryOverlay
