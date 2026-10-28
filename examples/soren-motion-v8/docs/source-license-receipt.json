@@ -1,0 +1,37 @@
+[
+  {
+    "name": "motion-primitives",
+    "url": "https://raw.githubusercontent.com/ibelick/motion-primitives/main/LICENCE.md",
+    "sha256": "f668f5ef3635eb906f10b1eea9a32e449eb6e1a183ab6879ef6d56c0980dd2f3",
+    "license": "MIT",
+    "retrieved": "2026-10-28"
+  },
+  {
+    "name": "kokonut-ui",
+    "url": "https://raw.githubusercontent.com/kokonut-labs/kokonutui/main/LICENSE",
+    "sha256": "b2e018ad1fd564608cc1ee0c2ad675ce5202c8ed9f5f68e6d09e7b6bc881d5d2",
+    "license": "MIT",
+    "retrieved": "2026-10-28"
+  },
+  {
+    "name": "cult-ui",
+    "url": "https://raw.githubusercontent.com/nolly-studio/cult-ui/main/LICENSE.md",
+    "sha256": "78045e58dfd5f039ad350ad293da2ad9a2c0362b82dadb069b1c10be382ddac7",
+    "license": "MIT",
+    "retrieved": "2026-10-28"
+  },
+  {
+    "name": "fancy-components",
+    "url": "https://raw.githubusercontent.com/danielpetho/fancy/main/LICENSE",
+    "sha256": "39b0d9c112b4e80383da88660cbaa64972f741e80205c14fa1b779ff1989cc09",
+    "license": "MIT",
+    "retrieved": "2026-10-28"
+  },
+  {
+    "name": "magic-ui",
+    "url": "https://raw.githubusercontent.com/magicuidesign/magicui/main/LICENSE.md",
+    "sha256": "0147b84235ed916b8b4e89c1f80655351c5afe7d211b629be61f553a227b34ba",
+    "license": "MIT",
+    "retrieved": "2026-10-28"
+  }
+]

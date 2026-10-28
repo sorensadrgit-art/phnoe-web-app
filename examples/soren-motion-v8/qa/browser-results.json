@@ -1,0 +1,376 @@
+{
+  "url": "http://127.0.0.1:3049/",
+  "checks": [
+    {
+      "check": "About opens from the gallery",
+      "passed": true
+    },
+    {
+      "check": "Background outside dialog is inert",
+      "passed": true
+    },
+    {
+      "check": "Shift+Tab wraps to last dialog control",
+      "passed": true
+    },
+    {
+      "check": "Tab wraps to close control",
+      "passed": true
+    },
+    {
+      "check": "About changes chapter copy",
+      "passed": true
+    },
+    {
+      "check": "Tab End selects Now without changing section",
+      "passed": true
+    },
+    {
+      "check": "Ribbon videos pause while section is open",
+      "passed": true
+    },
+    {
+      "check": "Escape closes and restores opener",
+      "passed": true
+    },
+    {
+      "check": "Role selector updates selected chapter",
+      "passed": true
+    },
+    {
+      "check": "Military copy retains unverified dates limitation",
+      "passed": true
+    },
+    {
+      "check": "Anatomy mesh loads",
+      "passed": true
+    },
+    {
+      "check": "Bone isolate state",
+      "passed": true
+    },
+    {
+      "check": "All four anatomy states remain in the section",
+      "passed": true
+    },
+    {
+      "check": "Separation slider works by keyboard",
+      "passed": true
+    },
+    {
+      "check": "Zoom slider works by keyboard",
+      "passed": true
+    },
+    {
+      "check": "Anatomy reset clears separation and zoom",
+      "passed": true
+    },
+    {
+      "check": "WebGL context loss returns to film with status",
+      "passed": true
+    },
+    {
+      "check": "Existing 97-frame motion export loads",
+      "passed": true
+    },
+    {
+      "check": "Motion scrub reaches final frame",
+      "passed": true
+    },
+    {
+      "check": "Motion playback advances",
+      "passed": true
+    },
+    {
+      "check": "Side view selectable",
+      "passed": true
+    },
+    {
+      "check": "Motion reset stops on first frame",
+      "passed": true
+    },
+    {
+      "check": "Switching project disposes live viewer",
+      "passed": true
+    },
+    {
+      "check": "Workflow is labeled illustrative",
+      "passed": true
+    },
+    {
+      "check": "Steppr palette switch works",
+      "passed": true
+    },
+    {
+      "check": "Steppr links to actual approved project",
+      "passed": true
+    },
+    {
+      "check": "Inline evidence expands without nested dialogs",
+      "passed": true
+    },
+    {
+      "check": "Resume project previews its six own films",
+      "passed": true
+    },
+    {
+      "check": "Optional tool drag changes its position",
+      "passed": true
+    },
+    {
+      "check": "Reset restores tool arrangement",
+      "passed": true
+    },
+    {
+      "check": "Skill selection shows relevant work",
+      "passed": true
+    },
+    {
+      "check": "Skill connection opens matching project",
+      "passed": true
+    },
+    {
+      "check": "Contact contains only supplied destinations",
+      "passed": true
+    },
+    {
+      "check": "Clipboard denial has visible recovery",
+      "passed": true
+    },
+    {
+      "check": "Clipboard success announces copied URL",
+      "passed": true
+    },
+    {
+      "check": "Direct Projects hash resets the default project",
+      "passed": true
+    },
+    {
+      "check": "about 390x844 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "about 390x844 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "experience 390x844 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "experience 390x844 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "education 390x844 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "education 390x844 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "projects 390x844 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "projects 390x844 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "skills 390x844 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "skills 390x844 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "contact 390x844 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "contact 390x844 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "about 768x1024 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "about 768x1024 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "experience 768x1024 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "experience 768x1024 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "education 768x1024 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "education 768x1024 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "projects 768x1024 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "projects 768x1024 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "skills 768x1024 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "skills 768x1024 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "contact 768x1024 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "contact 768x1024 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "about 1440x900 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "about 1440x900 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "experience 1440x900 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "experience 1440x900 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "education 1440x900 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "education 1440x900 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "projects 1440x900 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "projects 1440x900 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "skills 1440x900 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "skills 1440x900 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "contact 1440x900 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "contact 1440x900 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "about 1920x1080 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "about 1920x1080 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "experience 1920x1080 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "experience 1920x1080 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "education 1920x1080 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "education 1920x1080 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "projects 1920x1080 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "projects 1920x1080 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "skills 1920x1080 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "skills 1920x1080 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "contact 1920x1080 no horizontal overflow",
+      "passed": true
+    },
+    {
+      "check": "contact 1920x1080 close and navigation visible",
+      "passed": true
+    },
+    {
+      "check": "200 percent zoom stays within viewport",
+      "passed": true
+    },
+    {
+      "check": "about reduced motion shows poster",
+      "passed": true
+    },
+    {
+      "check": "experience reduced motion shows poster",
+      "passed": true
+    },
+    {
+      "check": "education reduced motion shows poster",
+      "passed": true
+    },
+    {
+      "check": "projects reduced motion shows poster",
+      "passed": true
+    },
+    {
+      "check": "skills reduced motion shows poster",
+      "passed": true
+    },
+    {
+      "check": "contact reduced motion shows poster",
+      "passed": true
+    },
+    {
+      "check": "No uncaught browser errors",
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "screenshots": "qa/screenshots",
+  "scope": "Local Chromium; simulated WebGL context loss and clipboard success/denial; no device-performance or clinical validation."
+}

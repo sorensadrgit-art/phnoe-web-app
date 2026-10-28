@@ -1,0 +1,8 @@
+node_modules/
+dist/
+qa/screenshots/
+!public/media/
+!public/media/**
+!public/models/
+!public/models/**
+!*.zip
