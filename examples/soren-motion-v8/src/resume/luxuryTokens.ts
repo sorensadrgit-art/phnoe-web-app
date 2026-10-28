@@ -15,3 +15,65 @@ export const luxuryTokens: LuxuryTokens = {
 };
 
 export const sectionAccents = ['amber','terracotta','alpineBlue','amber','sage','teal'] as const;
+
+export interface CyberneticTokens {
+  palette: {
+    obsidian: string;
+    panelBg: string;
+    panelBorder: string;
+    specularRim: string;
+    textPrimary: string;
+    textSecondary: string;
+    textMuted: string;
+    emeraldBio: string;
+    solarAmber: string;
+    synapticCyan: string;
+    cobaltCyber: string;
+    neonViolet: string;
+    hyperPlatinum: string;
+  };
+  glows: {
+    emerald: string;
+    amber: string;
+    cyan: string;
+    cobalt: string;
+    violet: string;
+    platinum: string;
+  };
+  typography: {
+    display: string;
+    body: string;
+    mono: string;
+  };
+}
+
+export const cyberneticTokens: CyberneticTokens = {
+  palette: {
+    obsidian: '#070a0e',
+    panelBg: 'rgba(10, 13, 16, 0.82)',
+    panelBorder: 'rgba(255, 255, 255, 0.12)',
+    specularRim: 'rgba(255, 255, 255, 0.22)',
+    textPrimary: '#f5f6fa',
+    textSecondary: '#a4b0be',
+    textMuted: '#57606f',
+    emeraldBio: '#00f5a0',
+    solarAmber: '#ff9f43',
+    synapticCyan: '#00d2d3',
+    cobaltCyber: '#3867d6',
+    neonViolet: '#a55eea',
+    hyperPlatinum: '#f5f6fa'
+  },
+  glows: {
+    emerald: 'rgba(0, 245, 160, 0.35)',
+    amber: 'rgba(255, 159, 67, 0.35)',
+    cyan: 'rgba(0, 210, 211, 0.35)',
+    cobalt: 'rgba(56, 103, 214, 0.35)',
+    violet: 'rgba(165, 94, 234, 0.35)',
+    platinum: 'rgba(245, 246, 250, 0.25)'
+  },
+  typography: {
+    display: "'Syne', -apple-system, BlinkMacSystemFont, sans-serif",
+    body: "'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif",
+    mono: "'JetBrains Mono', Consolas, monospace"
+  }
+};
