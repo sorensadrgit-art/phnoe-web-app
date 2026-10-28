@@ -143,6 +143,8 @@ def main() -> None:
     desktop = args.desktop.resolve()
     if not desktop.is_dir():
         raise NotADirectoryError(desktop)
+    existing_shortcut = desktop / "KineLab PT.lnk"
+    shortcut_before = checksum(existing_shortcut) if existing_shortcut.is_file() else None
     target = desktop / "KineLab PT - Production Handoff"
     if target.exists():
         raise FileExistsError(f"Refusing to overwrite existing desktop handoff: {target}")
@@ -225,7 +227,8 @@ Read `03-Agent-Guide/OPEN-AGENT-START.txt`, `03-Agent-Guide/AGENTS.md` and `03-A
                        "extracted_files": source_count},
         "runtime_zip": {"file": dist_archive.name, "sha256": checksum(dist_archive),
                        "bytes": dist_archive.stat().st_size, "zip_entries": zip_count, **dist_info},
-        "safety": {"original_desktop_shortcut_preserved": "must verify after install",
+        "safety": {"original_desktop_shortcut_preserved": shortcut_before is not None and existing_shortcut.is_file() and checksum(existing_shortcut) == shortcut_before,
+                   "original_shortcut_sha256": shortcut_before,
                    "phi_copied": False, "runtime_dependencies_bundled": False,
                    "clinical_validation": "UNVERIFIED"},
     }
