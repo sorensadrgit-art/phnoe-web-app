@@ -1,6 +1,19 @@
 import React from 'react';
 import { PASSPORT_GATES, isGatePassed, shortHash } from './unifiedModel.js';
 
+const NEXT_STEPS = {
+  EMPTY: { title: 'Register Camera Footage', text: 'Go to the Capture tab to record or import the 6 required camera roles (Phone + Webcam).' },
+  DRAFT: { title: 'Complete Capture Role Set', text: 'Ensure all 6 footage roles are recorded before proceeding to calibration registration.' },
+  SIX_FILES_PROBED: { title: 'Record Caliper Measurement & Register', text: 'Measure the printed 20mm checkerboard with digital calipers, enter the exact value, and permanently register the original file hashes.' },
+  REGISTERED_ORIGINALS: { title: 'Run Video Normalization', text: 'Normalize camera footage to a constant framerate and verified H.264 profile in the Process tab.' },
+  NORMALIZATION_PASSED: { title: 'Run Camera Calibration', text: 'Compute intrinsic and extrinsic multi-camera calibration using the checkerboard footage.' },
+  CALIBRATION_PASSED: { title: 'Run Synchronization Analysis', text: 'Calculate temporal frame alignment and cross-camera audio-visual synchronization offset.' },
+  SYNC_PASSED: { title: 'Reconstruct 3D Markers', text: 'Triangulate synchronized 2D keypoints into calibrated 3D world coordinates.' },
+  '3D_PASSED': { title: 'Solve Inverse Kinematics', text: 'Run OpenSim inverse kinematics to compute anatomical joint flexion and rotation angles.' },
+  KINEMATICS_PASSED: { title: 'Generate Research Reports', text: 'Export multi-page vector PDF reports, JSON summaries, and kinematic CSV tables in Report Studio.' },
+  RESEARCH_REPORTABLE: { title: 'Session Complete & Auditable', text: 'All quality gates passed. Motion analysis and vector PDF reports are ready for laboratory research review.' }
+};
+
 export default function EvidencePassport({ passport, onOpenNative }) {
   if (!passport) {
     return (
@@ -17,6 +30,10 @@ export default function EvidencePassport({ passport, onOpenNative }) {
   const sources = passport.sources || {};
   const board = passport.board_measurement;
   const runs = passport.runs || {};
+
+  const currentIndex = Math.max(0, PASSPORT_GATES.findIndex(g => g.id === state));
+  const progressPct = Math.min(100, Math.round(((currentIndex + (isGatePassed(state, 'RESEARCH_REPORTABLE') ? 1 : 0)) / PASSPORT_GATES.length) * 100));
+  const nextStep = NEXT_STEPS[state] || NEXT_STEPS.EMPTY;
 
   return (
     <div className="uw-passport">
@@ -74,6 +91,26 @@ export default function EvidencePassport({ passport, onOpenNative }) {
             );
           })}
         </div>
+
+        <div className="uw-progress-container">
+          <div className="uw-progress-label">
+            <span>Stage {currentIndex + 1} of {PASSPORT_GATES.length}</span>
+            <strong>{progressPct}% Verified</strong>
+          </div>
+          <div className="uw-progress-track">
+            <div className="uw-progress-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Recommended Next Step Guidance */}
+      <div className="uw-next-step-card">
+        <div className="uw-next-step-header">
+          <span className="uw-next-step-badge">RECOMMENDED NEXT ACTION</span>
+          <small style={{ color: '#67e8f9', fontSize: 11 }}>Stage Gate: {state}</small>
+        </div>
+        <h4>{nextStep.title}</h4>
+        <p>{nextStep.text}</p>
       </div>
 
       {/* Sources & Physical Integrity */}

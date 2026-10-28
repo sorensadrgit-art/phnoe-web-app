@@ -31,6 +31,25 @@ export default function GuidedCaptureWizard({
     boardPrinted: false,
     syncCuesPlanned: false,
   });
+  const [deviceList, setDeviceList] = useState(null);
+  const [probingDevices, setProbingDevices] = useState(false);
+
+  const probeDevices = async () => {
+    setProbingDevices(true);
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) {
+        setDeviceList([{ label: 'Browser media device query unsupported', kind: 'videoinput' }]);
+        return;
+      }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevs = devices.filter(d => d.kind === 'videoinput');
+      setDeviceList(videoDevs.length > 0 ? videoDevs : [{ label: 'No video cameras detected by browser', kind: 'videoinput' }]);
+    } catch (e) {
+      setDeviceList([{ label: `Device query error: ${e.message}`, kind: 'videoinput' }]);
+    } finally {
+      setProbingDevices(false);
+    }
+  };
 
   const allFlightChecksPass = Object.values(flightCheck).every(Boolean);
   const isRealDraft = activeSession?.kind === 'real' && activeSession?.status === 'draft';
@@ -111,6 +130,31 @@ export default function GuidedCaptureWizard({
               <small>Visible, sharp hand clap or heel impact performed at start and end of trial.</small>
             </div>
           </label>
+        </div>
+
+        <div style={{ marginTop: 14, borderTop: '1px solid #1a323d', paddingTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#85a6b0' }}>Hardware Device Verification</span>
+            <button
+              type="button"
+              className="uw-btn"
+              style={{ fontSize: 11, padding: '4px 10px' }}
+              disabled={probingDevices}
+              onClick={probeDevices}
+            >
+              {probingDevices ? 'Probing Devices...' : 'Test Video Devices'}
+            </button>
+          </div>
+          {deviceList && (
+            <div className="uw-device-probe-box">
+              <strong>Detected Camera Hardware:</strong>
+              <ul className="uw-device-list">
+                {deviceList.map((dev, idx) => (
+                  <li key={idx}>{dev.label || `Camera ${idx + 1} (${dev.deviceId ? dev.deviceId.slice(0, 8) + '...' : 'Available'})`}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 

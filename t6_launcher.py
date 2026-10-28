@@ -120,25 +120,31 @@ def ensure_running() -> tuple[str, bool]:
     LOCAL.mkdir(parents=True, exist_ok=True)
     if STATE.exists():
         archival = LOCAL / ("t6-stale-" + uuid4().hex + ".json")
-        STATE.replace(archival)
+        try:
+            STATE.replace(archival)
+        except OSError:
+            try:
+                STATE.unlink(missing_ok=True)
+            except OSError:
+                pass
     chosen = choose_available_port()
     state = {"schema": SCHEMA, "port": chosen,
              "token": secrets.token_hex(32), "created_by": "local_single_icon_launcher"}
     _save_state(state)
     pythonw = ROOT / ".venv" / "Scripts" / "pythonw.exe"
     interpreter = pythonw if pythonw.is_file() else Path(sys.executable)
-    log = LOG.open("ab", buffering=0)
-    try:
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-        process = subprocess.Popen([
-            str(interpreter), str(ROOT / "t6_server.py"),
-            "--port", str(chosen), "--state", str(STATE),
-        ], cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=log,
-        stderr=subprocess.STDOUT,
-        creationflags=creationflags)
-    finally:
-        log.close()
-    for _ in range(55):
+    creationflags = (
+        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+    )
+    process = subprocess.Popen([
+        str(interpreter), str(ROOT / "t6_server.py"),
+        "--port", str(chosen), "--state", str(STATE),
+    ], cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    creationflags=creationflags)
+    for _ in range(60):
         if verified_running(state):
             return ("http://127.0.0.1:" + str(chosen) + "/#access=" + state["token"]), True
         if process.poll() is not None:

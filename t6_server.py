@@ -7,6 +7,7 @@ All writes delegate to the existing tested session/capture/workflow guards.
 from __future__ import annotations
 
 import argparse
+import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
@@ -16,7 +17,9 @@ import re
 import secrets
 import socket
 import sys
+import threading
 from threading import Lock
+import traceback
 from urllib.parse import unquote, urlsplit, parse_qs
 from uuid import uuid4
 
@@ -238,6 +241,8 @@ def make_server(service: IntegratedService, *, token: str, dist: Path = DIST,
                         self._json(200, service.camera_status(ident))
                     elif action == "passport":
                         self._json(200, service.passport(ident))
+                    elif action == "motion":
+                        self._json(200, service.motion_data(ident))
                     elif action == "reports":
                         self._json(200, {"reports": service.reports(ident)})
                     elif action == "recovery":
@@ -300,7 +305,7 @@ def make_server(service: IntegratedService, *, token: str, dist: Path = DIST,
             if not self._check_host() or not self._authorized():
                 return
             parts = [unquote(v) for v in urlsplit(self.path).path.strip("/").split("/")]
-            if parts[:3] != ["api", "v1", "sessions"] and parts[:3] != ["api", "v1", "backup"]:
+            if parts[:3] != ["api", "v1", "sessions"] and parts[:3] != ["api", "v1", "backup"] and parts[:3] != ["api", "v1", "system"]:
                 self._error(404, "Unknown API route")
                 return
             try:
@@ -309,6 +314,18 @@ def make_server(service: IntegratedService, *, token: str, dist: Path = DIST,
                     return
                 data = self._body()
                 confirmed = data.get("confirm") is True
+                if parts == ["api", "v1", "system", "shutdown"]:
+                    if not confirmed:
+                        self._error(400, "Confirmation required for system shutdown")
+                        return
+                    self._json(200, {"status": "shutting_down", "message": "KineLab local server is shutting down."})
+                    server_ref = self.server
+                    def _delayed_shutdown():
+                        import time
+                        time.sleep(0.3)
+                        server_ref.shutdown()
+                    threading.Thread(target=_delayed_shutdown, daemon=True).start()
+                    return
                 if parts == ["api", "v1", "backup", "create"]:
                     self._json(201, service.create_backup(confirm=confirmed, session_ids=data.get("session_ids")))
                     return
@@ -354,7 +371,11 @@ def make_server(service: IntegratedService, *, token: str, dist: Path = DIST,
                 self._error(415, str(err))
             except (FileExistsError, IntegrationBlocked, ValueError, OSError) as err:
                 self._error(409, str(err))
-            except Exception:
+            except Exception as exc:
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                sys.stderr.write(f"[{now}] ERROR in {self.command} {self.path}: {exc}\n")
+                traceback.print_exc(file=sys.stderr)
+                sys.stderr.flush()
                 # Do not expose filesystem data or tracebacks over HTTP.
                 self._error(500, "Unexpected local API error; inspect the local application log")
 
@@ -366,15 +387,35 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--state", type=Path, required=True)
     args = parser.parse_args()
+
+    local_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "KineLabPT"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    log_file = (local_dir / "t6-server.log").open("a", encoding="utf-8")
+    sys.stdout = log_file
+    sys.stderr = log_file
+
     doc = json.loads(args.state.read_text(encoding="utf-8"))
     if (not isinstance(doc, dict) or doc.get("port") != args.port or
             not isinstance(doc.get("token"), str) or len(doc["token"]) < 40):
         raise ValueError("Unified local server state mismatch")
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    log_file.write(f"\n[{now}] KineLab PT server starting on 127.0.0.1:{args.port}\n")
+    log_file.flush()
+
     server = make_server(IntegratedService(), token=doc["token"], port=args.port)
     try:
         server.serve_forever(poll_interval=0.5)
+    except Exception as exc:
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        log_file.write(f"[{now}] Server fatal exception: {exc}\n")
+        traceback.print_exc(file=log_file)
+        log_file.flush()
     finally:
         server.server_close()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        log_file.write(f"[{now}] KineLab PT server stopped cleanly.\n")
+        log_file.flush()
 
 
 if __name__ == "__main__":

@@ -41,9 +41,25 @@ function Field({label,children}){return <label className="uw-field"><span>{label
 
 export default function UnifiedApp(){
  const token=useMemo(()=>readAccessToken(window.location.hash),[]);
- const [view,setView]=useState('overview');
+ const [view,setViewState]=useState(()=>{
+  try{return localStorage.getItem('kinelab_active_tab')||'overview'}catch{return 'overview'}
+ });
+ const setView=useCallback(next=>{
+  setViewState(next);
+  try{localStorage.setItem('kinelab_active_tab',next)}catch{}
+ },[]);
  const [sessions,setSessions]=useState([]);
- const [selected,setSelected]=useState('');
+ const [selected,setSelectedState]=useState(()=>{
+  try{return localStorage.getItem('kinelab_selected_session')||''}catch{return ''}
+ });
+ const setSelected=useCallback(next=>{
+  setSelectedState(prev=>{
+   const val=typeof next==='function'?next(prev):next;
+   try{localStorage.setItem('kinelab_selected_session',val)}catch{}
+   return val;
+  });
+ },[]);
+ const [connected,setConnected]=useState(true);
  const [detail,setDetail]=useState(null);
  const [passport,setPassport]=useState(null);
  const [job,setJob]=useState(null);
@@ -126,6 +142,27 @@ export default function UnifiedApp(){
   const id=setInterval(tick,3500);
   return ()=>clearInterval(id);
  },[selected,token,refreshSelected]);
+
+ useEffect(()=>{
+  if(!token)return;
+  const ping=async()=>{
+   try{
+    const res=await fetch(API+'/health',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+    setConnected(res.ok);
+   }catch{setConnected(false)}
+  };
+  const timer=setInterval(ping,10000);
+  return ()=>clearInterval(timer);
+ },[token]);
+
+ const shutdownServer=async()=>{
+  if(!confirmAction('Are you sure you want to stop the local KineLab service? You can restart it anytime via the desktop shortcut.'))return;
+  try{
+   await json('/api/v1/system/shutdown',{method:'POST',body:{confirm:true}});
+   show('Local service has been shut down. You can safely close this browser window.');
+   setConnected(false);
+  }catch(err){show('Shutdown error: '+err.message,'error')}
+ };
 
  const mutate=async(label,work)=>{
   if(busy)return;
@@ -288,6 +325,10 @@ export default function UnifiedApp(){
      <h2>{subhead?.label||'Overview'}</h2>
     </div>
     <div className="uw-top-controls">
+     <div className={"uw-connection-pill " + (connected ? "uw-connected" : "uw-disconnected")} title={connected ? "Connected to local KineLab service" : "Reconnecting to local KineLab service..."}>
+      <span className="uw-conn-dot" />
+      <span>{connected ? "127.0.0.1" : "Reconnecting..."}</span>
+     </div>
      <label className="uw-select-wrap"><span>ACTIVE SESSION</span>
       <select aria-label="Select active session" value={selected}
        onChange={event=>setSelected(event.target.value)} disabled={loading||!!busy}>
@@ -426,7 +467,7 @@ export default function UnifiedApp(){
       </div>
      </>}
 
-     {view==='motion'&&<div className="uw-motion-slot"><MotionApp/></div>}
+     {view==='motion'&&<div className="uw-motion-slot"><MotionApp sessionId={selected} token={token}/></div>}
 
      {view==='analysis'&&<>
       <div className="uw-two">
@@ -484,6 +525,7 @@ export default function UnifiedApp(){
         <div className="uw-actions">
          <button className="uw-btn" onClick={()=>openNative('runbook')} disabled={!selected}>Open runbook</button>
          <button className="uw-btn" onClick={()=>refreshSelected(selected)} disabled={!selected}>Refresh status</button>
+         <button className="uw-btn danger" onClick={shutdownServer}>Shut down local service</button>
         </div>
        </Box>
        <Box><CardHeading eyebrow="SAFE RECOVERY" heading="Native jobs and abandoned locks"

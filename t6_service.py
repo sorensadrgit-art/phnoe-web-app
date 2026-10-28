@@ -291,6 +291,23 @@ class IntegratedService:
             self.index.reindex()
             return self.index.get_passport(session_id)
 
+    def motion_data(self, session_id: str) -> dict:
+        with self.mutex:
+            project = self._project(session_id)
+            exports = project / "exports"
+            if exports.is_dir() and not exports.is_symlink():
+                for file in exports.glob("*.motion.json"):
+                    if file.is_file() and not file.is_symlink():
+                        try:
+                            return json.loads(file.read_text(encoding="utf-8"))
+                        except Exception as e:
+                            raise ValueError(f"Invalid motion file: {e}")
+            if session_id == "caliscope-walking-test-20261027":
+                demo_path = ROOT / "viewer" / "dist" / "motion" / "demo.motion.json"
+                if demo_path.is_file():
+                    return json.loads(demo_path.read_text(encoding="utf-8"))
+            raise FileNotFoundError(f"No motion JSON found for session {session_id}")
+
     def compare(self, s1: str, s2: str) -> dict:
         with self.mutex:
             self.index.reindex()

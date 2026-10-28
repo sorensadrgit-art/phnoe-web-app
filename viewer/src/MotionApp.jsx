@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
-import {Canvas,useFrame} from '@react-three/fiber';
+import {Canvas,useFrame,useThree} from '@react-three/fiber';
 import {Grid,OrbitControls} from '@react-three/drei';
 import * as THREE from 'three';
 import {validateMotion,frameAtTime,angleDegrees} from './motionData.js';
@@ -38,7 +38,30 @@ function Rig({motion,currentFrame}){
   </mesh>)}
  </group>;
 }
-function useMotion(){
+
+function CameraPresetHandler({preset,controlsRef}){
+ const {camera}=useThree();
+ useEffect(()=>{
+  if(!preset)return;
+  if(preset==='front'){
+   camera.position.set(0,1.0,3.2);
+   controlsRef.current?.target?.set(0,1.0,0);
+  }else if(preset==='side'){
+   camera.position.set(3.2,1.0,0);
+   controlsRef.current?.target?.set(0,1.0,0);
+  }else if(preset==='top'){
+   camera.position.set(0,4.2,0.01);
+   controlsRef.current?.target?.set(0,0,0);
+  }else if(preset==='iso'){
+   camera.position.set(2.3,1.9,3.3);
+   controlsRef.current?.target?.set(0,1.0,0);
+  }
+  controlsRef.current?.update();
+ },[preset,camera,controlsRef]);
+ return null;
+}
+
+function useMotion(token){
  const [data,setData]=useState(null),[error,setError]=useState(''),[source,setSource]=useState('demo');
  const generation=useRef(0);
  useEffect(()=>{
@@ -51,18 +74,40 @@ function useMotion(){
  const loadFile=async file=>{
   if(!file)return;
   const request=++generation.current;
-  setData(null);setError('');setSource('local');
+  setData(null);setError('');setSource('local file');
   try{
    const loaded=validateMotion(JSON.parse(await file.text()));
    if(request===generation.current)setData(loaded);
   }catch(e){if(request===generation.current)setError(String(e.message||e));}
  };
- return {data,error,source,loadFile};
+ const loadSession=async sid=>{
+  if(!sid)return;
+  const request=++generation.current;
+  setData(null);setError('');setSource('session: '+sid);
+  try{
+   const headers=token?{Authorization:'Bearer '+token}:{};
+   const res=await fetch('/api/v1/sessions/'+encodeURIComponent(sid)+'/motion',{headers});
+   if(!res.ok){
+    const body=await res.json().catch(()=>({}));
+    throw new Error(body.error||`HTTP ${res.status}`);
+   }
+   const loaded=validateMotion(await res.json());
+   if(request===generation.current)setData(loaded);
+  }catch(e){
+   if(request===generation.current)setError(`Cannot load motion for ${sid}: ${e.message}`);
+  }
+ };
+ return {data,error,source,loadFile,loadSession};
 }
-export default function MotionApp(){
- const {data,error,source,loadFile}=useMotion();
+
+export default function MotionApp({sessionId='',token=''}){
+ const {data,error,source,loadFile,loadSession}=useMotion(token);
  const [playing,setPlaying]=useState(()=>!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
  const [seconds,setSeconds]=useState(null);
+ const [speed,setSpeed]=useState(1.0);
+ const [preset,setPreset]=useState('iso');
+ const controlsRef=useRef();
+
  useEffect(()=>{setSeconds(data?.frames[0].t??null);},[data]);
  useEffect(()=>{
   if(!data||!playing||data.frames.length<2)return;
@@ -70,35 +115,63 @@ export default function MotionApp(){
   let previous=null,id;
   const tick=now=>{
    if(previous!==null){
-    const delta=(now-previous)/1000;
+    const delta=((now-previous)/1000)*speed;
     setSeconds(t=>{const next=(t??first)+delta;return next>last?first+(next-first)%duration:next;});
    }
    previous=now;id=requestAnimationFrame(tick);
   };
   id=requestAnimationFrame(tick);
   return ()=>cancelAnimationFrame(id);
- },[data,playing]);
+ },[data,playing,speed]);
+
  const f=data?frameAtTime(data,seconds??data.frames[0].t):null;
  const kin=data?.kinematics;
- const label=source==='demo'?'DEMO':data?.schema==='kinelab.motion.v2'?data.kind.toUpperCase():'LOCAL / LEGACY UNBOUND';
+ const label=source==='demo'?'DEMO':data?.schema==='kinelab.motion.v2'?data.kind.toUpperCase():source.toUpperCase();
  const angle=key=>{
   const value=angleDegrees(kin,key,f?.t);
   return Number.isFinite(value)?value.toFixed(1)+'°':'—';
  };
+
  return <main className="shell">
   <div className="top"><div><div className="eyebrow">KineLab PT · Clinical Motion Systems</div><h1>Motion Analysis Lab</h1>
    <p className="sub">Local offline bundle · Pose2Sim → OpenSim (optional) · JSON → Three.js / Blender</p>
-   <label className="sub">Load local motion JSON <input type="file" accept=".json,application/json"
-    onChange={e=>{const file=e.target.files?.[0];e.target.value='';setPlaying(false);loadFile(file);}} /></label>
+   <div style={{display:'flex',gap:12,alignItems:'center',marginTop:6,flexWrap:'wrap'}}>
+    {sessionId&&<button type="button" className="uw-btn is-accent" style={{fontSize:11,padding:'4px 10px'}}
+     onClick={()=>loadSession(sessionId)}>Load active: {sessionId}</button>}
+    <label className="sub" style={{margin:0}}>Import motion JSON <input type="file" accept=".json,application/json"
+     onChange={e=>{const file=e.target.files?.[0];e.target.value='';setPlaying(false);loadFile(file);}} /></label>
+   </div>
    </div><div className="chip">● {label} / EXPLORATORY</div></div>
-  {!data?<div className="panel" style={{marginTop:22,padding:30}}>{error?<p className="error" role="alert">{error}</p>:'Loading local motion data…'}</div>:
+
+  <div className="uw-motion-bar">
+   <div style={{display:'flex',gap:6,alignItems:'center'}}>
+    <span style={{fontSize:11,color:'#85a6b0'}}>View:</span>
+    <div className="uw-btn-group">
+     <button type="button" className={preset==='front'?'is-active':''} onClick={()=>setPreset('front')}>Front (Coronal)</button>
+     <button type="button" className={preset==='side'?'is-active':''} onClick={()=>setPreset('side')}>Side (Sagittal)</button>
+     <button type="button" className={preset==='top'?'is-active':''} onClick={()=>setPreset('top')}>Top (Transverse)</button>
+     <button type="button" className={preset==='iso'?'is-active':''} onClick={()=>setPreset('iso')}>3D (Isometric)</button>
+    </div>
+   </div>
+   <div style={{display:'flex',gap:6,alignItems:'center',marginLeft:'auto'}}>
+    <span style={{fontSize:11,color:'#85a6b0'}}>Speed:</span>
+    <div className="uw-btn-group">
+     <button type="button" className={speed===0.25?'is-active':''} onClick={()=>setSpeed(0.25)}>0.25x</button>
+     <button type="button" className={speed===0.5?'is-active':''} onClick={()=>setSpeed(0.5)}>0.5x</button>
+     <button type="button" className={speed===1.0?'is-active':''} onClick={()=>setSpeed(1.0)}>1.0x</button>
+    </div>
+   </div>
+  </div>
+
+  {!data?<div className="panel" style={{marginTop:12,padding:30}}>{error?<p className="error" role="alert">{error}</p>:'Loading local motion data…'}</div>:
   <div className="dashboard">
    <div className="panel"><div className="panelhead"><span>Three-dimensional reconstruction</span><span>OPENSim Y-Up • Meters</span></div>
     <div className="scene"><Canvas camera={{position:[2.3,1.9,3.3],fov:48,near:.02,far:80}}>
      <color attach="background" args={['#0b151c']}/><ambientLight intensity={1.45}/><directionalLight position={[3,6,4]} intensity={2.5}/>
      <Grid args={[10,10]} cellSize={.5} sectionColor="#37636a" cellColor="#214750" fadeDistance={18} fadeStrength={2}/>
      <Rig motion={data} currentFrame={f}/>
-     <OrbitControls makeDefault target={[0,1.0,0]} enableDamping minDistance={.4} maxDistance={14}/>
+     <CameraPresetHandler preset={preset} controlsRef={controlsRef}/>
+     <OrbitControls ref={controlsRef} makeDefault target={[0,1.0,0]} enableDamping minDistance={.4} maxDistance={14}/>
     </Canvas></div>
     <div className="controls"><button className="play" disabled={data.frames.length<2} onClick={()=>setPlaying(v=>!v)}>{playing?'Pause':'Play'}</button>
      <input className="timeline" type="range" aria-label="Scrub movement" min={data.frames[0].t} max={data.frames.at(-1).t}

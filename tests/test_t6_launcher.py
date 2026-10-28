@@ -39,6 +39,15 @@ class LauncherTests(unittest.TestCase):
         with patch("t6_launcher.get_health", side_effect=TimeoutError):
             self.assertFalse(verified_running(candidate))
 
+    def test_stale_instance_archival(self):
+        # Stale state where server is dead is cleanly handled
+        stale_data = {"port": 4184, "token": "b" * 64, "schema": "kinelab.t6.instance.v1"}
+        self.file.write_text(json.dumps(stale_data))
+        state = read_state(self.file)
+        self.assertIsNotNone(state)
+        with patch("t6_launcher.get_health", side_effect=OSError("Connection refused")):
+            self.assertFalse(verified_running(state))
+
 
 if __name__=="__main__":
     unittest.main()

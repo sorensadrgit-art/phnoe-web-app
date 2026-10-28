@@ -370,3 +370,37 @@
 .uw-compare-result.is-incompatible{border-color:#7c4d23;background:#261c16}
 .uw-compare-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px}
 .uw-compare-reason{font-size:11px;color:#8baeb6;line-height:1.55;margin:0}
+
+/* Live connection status pill in header */
+.uw-connection-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;letter-spacing:0.02em}
+.uw-connection-pill.uw-connected{background:#0d2e29;color:#5eead4;border:1px solid #14554b}
+.uw-connection-pill.uw-disconnected{background:#3b1d1d;color:#fca5a5;border:1px solid #7f1d1d;animation:uwPulse 1.8s infinite}
+.uw-conn-dot{width:7px;height:7px;border-radius:50%}
+.uw-connected .uw-conn-dot{background:#2dd4bf;box-shadow:0 0 6px #2dd4bf}
+.uw-disconnected .uw-conn-dot{background:#f87171}
+@keyframes uwPulse{0%,100%{opacity:1}50%{opacity:0.6}}
+
+/* Passport Progress bar & Next step */
+.uw-progress-container{margin-top:14px;padding:12px 14px;background:#091923;border-radius:10px;border:1px solid #1a323d}
+.uw-progress-label{display:flex;justify-content:space-between;font-size:11px;color:#85a6b0;margin-bottom:6px}
+.uw-progress-label strong{color:#5eead4}
+.uw-progress-track{height:6px;background:#152832;border-radius:3px;overflow:hidden}
+.uw-progress-fill{height:100%;background:linear-gradient(90deg,#0ea5e9,#10b981);border-radius:3px;transition:width 0.4s ease}
+
+.uw-next-step-card{background:#0e2632;border:1px solid #234d5d;border-radius:12px;padding:16px 18px;margin-bottom:16px}
+.uw-next-step-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.uw-next-step-badge{background:#153d4c;color:#67e8f9;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:0.05em}
+.uw-next-step-card h4{margin:0;font-size:13px;color:#f0fdfa}
+.uw-next-step-card p{margin:4px 0 0;font-size:11px;color:#94a3b8;line-height:1.5}
+
+/* Motion 3D presets and speed controls */
+.uw-motion-bar{display:flex;gap:12px;align-items:center;padding:10px 16px;background:#0d202b;border-radius:10px;margin-bottom:12px;flex-wrap:wrap}
+.uw-btn-group{display:inline-flex;border-radius:8px;overflow:hidden;border:1px solid #224350}
+.uw-btn-group button{background:#122a36;color:#93c5fd;border:none;border-right:1px solid #224350;padding:6px 10px;font-size:11px;cursor:pointer}
+.uw-btn-group button:last-child{border-right:none}
+.uw-btn-group button:hover{background:#1c3d4e}
+.uw-btn-group button.is-active{background:#0284c7;color:#fff;font-weight:700}
+
+/* Device probe */
+.uw-device-probe-box{background:#07141b;border:1px solid #1c3642;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:11px;color:#94a3b8}
+.uw-device-list{margin:6px 0 0;padding-left:16px}

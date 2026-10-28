@@ -41,6 +41,13 @@ test('fragment access token is only read from URL hash, not query string',()=>{
  assert.equal(readAccessToken('#view=motion'),null);
  assert.equal(tabFromHash('#view=motion'),'motion');
  assert.equal(tabFromHash('#view=untrusted'),'overview');
+
+ const store = new Map();
+ const mockStorage = { setItem: (k, v) => store.set(k, v), getItem: (k) => store.get(k) || null };
+ assert.equal(readAccessToken('#access=' + 'd'.repeat(64), mockStorage), 'd'.repeat(64));
+ assert.equal(mockStorage.getItem('kinelab_t6_token'), 'd'.repeat(64));
+ // When hash lacks token, token is restored from storage
+ assert.equal(readAccessToken('#view=motion', mockStorage), 'd'.repeat(64));
 });
 test('passport gates progression and gate checks',()=>{
  assert.equal(PASSPORT_GATES.length, 10);

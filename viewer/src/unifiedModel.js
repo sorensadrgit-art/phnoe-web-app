@@ -36,10 +36,18 @@ export function apiSessionPath(sessionId){
  if(typeof sessionId!=='string'||!sessionId.trim())throw Error('Session ID required');
  return '/api/v1/sessions/'+encodeURIComponent(sessionId);
 }
-export function readAccessToken(fragment){
+export function readAccessToken(fragment, storage = globalThis?.sessionStorage){
  const text=typeof fragment==='string'?fragment:'';
  const match=text.match(/(?:^#|&)access=([a-f0-9]{64})(?:&|$)/);
- return match?match[1]:null;
+ if (match) {
+  try { storage?.setItem?.('kinelab_t6_token', match[1]); } catch {}
+  return match[1];
+ }
+ try {
+  const cached = storage?.getItem?.('kinelab_t6_token');
+  if (cached && /^[a-f0-9]{64}$/.test(cached)) return cached;
+ } catch {}
+ return null;
 }
 export function tabFromHash(fragment){
  const match=String(fragment??'').match(/(?:^#|&)view=([a-z-]+)(?:&|$)/);

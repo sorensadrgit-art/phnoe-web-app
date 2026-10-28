@@ -274,6 +274,35 @@ class LocalServerTests(unittest.TestCase):
         r_res = json.loads(data)
         self.assertTrue(r_res["ok"])
 
+    def test_session_motion_endpoint(self):
+        self.svc.create_session("http-mot")
+        session_folder = self.svc._project("http-mot")
+        exports_dir = session_folder / "exports"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        motion_file = exports_dir / "http-mot.motion.json"
+        motion_file.write_text(json.dumps({"schema": "kinelab.motion.v2", "kind": "real", "frames": []}), encoding="utf-8")
+
+        st, data, _ = self.request("GET", "/api/v1/sessions/http-mot/motion", headers=self.auth())
+        self.assertEqual(st, 200)
+        mot = json.loads(data)
+        self.assertEqual(mot.get("schema"), "kinelab.motion.v2")
+
+        # Session without motion returns 409
+        self.svc.create_session("http-no-mot")
+        st, _, _ = self.request("GET", "/api/v1/sessions/http-no-mot/motion", headers=self.auth())
+        self.assertEqual(st, 409)
+
+    def test_system_shutdown_endpoint(self):
+        # Unconfirmed shutdown returns 400
+        st, _, _ = self.request("POST", "/api/v1/system/shutdown", {}, headers=self.auth())
+        self.assertEqual(st, 400)
+
+        # Confirmed shutdown returns 200
+        st, data, _ = self.request("POST", "/api/v1/system/shutdown", {"confirm": True}, headers=self.auth())
+        self.assertEqual(st, 200)
+        res = json.loads(data)
+        self.assertEqual(res.get("status"), "shutting_down")
+
 
 if __name__=="__main__":
     unittest.main()
