@@ -1,1 +1,0 @@
-KineLab PT workspace: existing local launchers/t6-browser-qa.png. Demo motion: projects/demo-local/exports/demo.motion.json, schema kinelab.motion.v1. Both from the existing KineLab-PT-DualCam project. No private footage or external stock was fetched. Export data is presented as demo data, with no physical accuracy claim.

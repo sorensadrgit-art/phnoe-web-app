@@ -1,4 +1,0 @@
-index.html -text -diff linguist-generated=true
-**/gsap.min.js -text -diff linguist-vendored=true
-*.mp4 binary
-*.glb binary
