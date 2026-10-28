@@ -82,12 +82,12 @@ npm --prefix viewer ci
 npm --prefix viewer test
 npm --prefix viewer run build
 npm --prefix viewer run build:cloud
-# On this machine, a previously verified scientific Python environment:
-& 'C:\Users\soren\Documents\Projects\KineLab-PT-DualCam\.venv\Scripts\python.exe' -m unittest discover -s tests
+# Use the isolated, preinstalled scientific environment in this workspace:
+& '.\.venv\Scripts\python.exe' -m unittest discover -s tests
 # From an ordinary desktop production build only:
 python tools\build_offline_distribution.py
 ```
-The existing scientific Python environment is used for verification only; create an isolated install for the final release. The above native Python test command may require local fixtures. Record blockers without modifying patient recordings.
+The local checkout has its own isolated Python environment and synthetic/test-only fixtures (not copied patient datasets). Read `docs/BASELINE_QA_20261028.md` for the passing test recheck, prior intermittent Windows socket failure, and remaining release blockers. Never copy this developer environment blindly into a clean-machine release. Record blockers without modifying patient recordings.
 
 ## Agent collaboration
 Codex: test-first engineering and code review.
