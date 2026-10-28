@@ -131,7 +131,11 @@ export default function LiveHUDOverlay({
       const badgeY = Math.max(5, Math.min(height - boxH - 5, y - 28));
 
       ctx.beginPath();
-      ctx.roundRect(badgeX, badgeY, boxW, boxH, 4);
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(badgeX, badgeY, boxW, boxH, 4);
+      } else {
+        ctx.rect(badgeX, badgeY, boxW, boxH);
+      }
       ctx.fill();
       ctx.stroke();
 
@@ -143,18 +147,21 @@ export default function LiveHUDOverlay({
     if (kinematics) {
       // Left knee badge (landmark 25)
       const lKnee = landmarks[25];
-      if (lKnee && kinematics.leftKneeFlexion !== null) {
+      if (lKnee && (lKnee.visibility === undefined || lKnee.visibility >= 0.4) && kinematics.leftKneeFlexion !== null) {
         const tone = kinematics.leftKneeFlexion >= (trackerState?.targetROM || 80) ? 'success' : 'neutral';
         drawBadge(`L: ${kinematics.leftKneeFlexion}°`, mapX(lKnee.x), mapY(lKnee.y), tone);
       }
       // Right knee badge (landmark 26)
       const rKnee = landmarks[26];
-      if (rKnee && kinematics.rightKneeFlexion !== null) {
+      if (rKnee && (rKnee.visibility === undefined || rKnee.visibility >= 0.4) && kinematics.rightKneeFlexion !== null) {
         const tone = kinematics.rightKneeFlexion >= (trackerState?.targetROM || 80) ? 'success' : 'neutral';
         drawBadge(`R: ${kinematics.rightKneeFlexion}°`, mapX(rKnee.x), mapY(rKnee.y), tone);
       }
       // Trunk lean badge at midpoint of shoulders
-      if (landmarks[11] && landmarks[12] && kinematics.trunkLean !== null) {
+      if (landmarks[11] && landmarks[12] &&
+          (landmarks[11].visibility === undefined || landmarks[11].visibility >= 0.4) &&
+          (landmarks[12].visibility === undefined || landmarks[12].visibility >= 0.4) &&
+          kinematics.trunkLean !== null) {
         const sMidX = (landmarks[11].x + landmarks[12].x) / 2;
         const sMidY = (landmarks[11].y + landmarks[12].y) / 2;
         const tone = kinematics.trunkLean > 30 ? 'warning' : 'neutral';
@@ -162,12 +169,12 @@ export default function LiveHUDOverlay({
       }
     }
 
-    // 4. Target Depth Arc Gauge (Top Right)
-    const targetROM = trackerState?.targetROM || 80;
-    const currentDepth = Math.max(
-      kinematics?.leftKneeFlexion ?? 0,
-      kinematics?.rightKneeFlexion ?? 0
-    );
+    // 4. Target Depth / Hold Arc Gauge (Top Right)
+    const isBalance = trackerState?.exerciseType === 'balance';
+    const targetROM = trackerState?.targetROM || (isBalance ? 30 : 80);
+    const currentDepth = isBalance
+      ? (trackerState?.balanceHoldSeconds ?? 0)
+      : Math.max(kinematics?.leftKneeFlexion ?? 0, kinematics?.rightKneeFlexion ?? 0);
     const progress = Math.min(1.0, currentDepth / Math.max(1, targetROM));
 
     const gaugeX = width - 60;
@@ -198,10 +205,10 @@ export default function LiveHUDOverlay({
     ctx.font = 'bold 15px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${Math.round(currentDepth)}°`, gaugeX, gaugeY - 4);
+    ctx.fillText(isBalance ? `${Math.round(currentDepth)}s` : `${Math.round(currentDepth)}°`, gaugeX, gaugeY - 4);
     ctx.font = '10px system-ui';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(`/${targetROM}°`, gaugeX, gaugeY + 12);
+    ctx.fillText(isBalance ? `/${targetROM}s` : `/${targetROM}°`, gaugeX, gaugeY + 12);
     ctx.restore();
 
     ctx.restore();

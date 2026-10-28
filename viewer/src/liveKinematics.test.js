@@ -100,9 +100,14 @@ test('calculateTrunkLean measures spinal tilt from vertical in screen coordinate
   const shoulderUpright = { x: 100, y: 100 };
   assert.equal(calculateTrunkLean(shoulderUpright, hipMid), 0);
 
-  // 45 degree lean forward
+  // 45 degree lateral lean (dx=100, dy=-100)
   const shoulder45 = { x: 200, y: 100 };
   assert.equal(calculateTrunkLean(shoulder45, hipMid), 45);
+
+  // 45 degree 3D sagittal forward lean (dx=0, dy=-100, dz=-100)
+  const shoulder3D45 = { x: 100, y: 100, z: -100 };
+  const hip3D = { x: 100, y: 200, z: 0 };
+  assert.equal(calculateTrunkLean(shoulder3D45, hip3D), 45);
 
   // Missing input
   assert.equal(calculateTrunkLean(null, hipMid), null);
@@ -124,6 +129,15 @@ test('calculateKneeValgus measures medial knee deviation in frontal plane', () =
   const kneeVarus = { x: 90, y: 50 };
   const varusDeg = calculateKneeValgus(hip, kneeVarus, ankle, 'left');
   assert.ok(varusDeg < 0, 'Left knee varus should be negative');
+
+  // Midline-aware valgus: bilateral hips at x=45 and x=55 (midline at 50)
+  // Left hip at 45, knee collapses medial to 49 -> valgus > 0
+  const lValgusMid = calculateKneeValgus({ x: 45, y: 50 }, { x: 49, y: 70 }, { x: 45, y: 90 }, 'left', 50);
+  assert.ok(lValgusMid > 0, 'Midline-aware left knee collapse must be positive valgus');
+
+  // Right hip at 55, knee collapses medial to 51 -> valgus > 0
+  const rValgusMid = calculateKneeValgus({ x: 55, y: 50 }, { x: 51, y: 70 }, { x: 55, y: 90 }, 'right', 50);
+  assert.ok(rValgusMid > 0, 'Midline-aware right knee collapse must be positive valgus');
 });
 
 test('calculateBilateralSymmetry outputs accurate percentages and handles boundary cases', () => {

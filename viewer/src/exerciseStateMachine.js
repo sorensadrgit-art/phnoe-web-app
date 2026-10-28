@@ -82,6 +82,7 @@ export function createExerciseTracker(exerciseType = EXERCISE_TYPES.SQUAT, custo
   let bottomHoldStartTime = null;
   let lastCoachingMessage = 'Get ready to begin';
   let balanceHoldDurationMs = 0;
+  let lastTimestampMs = null;
 
   // Smoothing buffer for noise reduction
   const HISTORY_SIZE = config.smoothingWindow !== undefined ? config.smoothingWindow : 3;
@@ -103,6 +104,7 @@ export function createExerciseTracker(exerciseType = EXERCISE_TYPES.SQUAT, custo
     reps = [];
     setStartTime = null;
     currentRepStartTime = null;
+    lastTimestampMs = null;
     currentRepFaults.clear();
     peakFlexionCurrentRep = 0;
     minSymmetryCurrentRep = 100;
@@ -118,11 +120,13 @@ export function createExerciseTracker(exerciseType = EXERCISE_TYPES.SQUAT, custo
     }
 
     if (!setStartTime) setStartTime = timestampMs;
+    const dt = lastTimestampMs !== null ? Math.max(0, timestampMs - lastTimestampMs) : 50;
+    lastTimestampMs = timestampMs;
 
     const leftFlex = kinematics.leftKneeFlexion ?? 0;
     const rightFlex = kinematics.rightKneeFlexion ?? 0;
-    // Primary active flexion
-    const activeFlexion = exerciseType === EXERCISE_TYPES.LUNGE
+    // Primary active flexion (unilateral for lunges and knee extension)
+    const activeFlexion = (exerciseType === EXERCISE_TYPES.LUNGE || exerciseType === EXERCISE_TYPES.KNEE_EXTENSION)
       ? Math.max(leftFlex, rightFlex)
       : (leftFlex + rightFlex) / 2;
 
@@ -139,25 +143,53 @@ export function createExerciseTracker(exerciseType = EXERCISE_TYPES.SQUAT, custo
     // State machine logic
     if (exerciseType === EXERCISE_TYPES.BALANCE) {
       // Balance mode tracks hold time and sway stability
-      const isOneLegOff = Math.abs(leftFlex - rightFlex) > 25;
+      const isOneLegOff = Math.abs(leftFlex - rightFlex) > 20;
       if (isOneLegOff) {
         if (phase === PHASES.IDLE || phase === PHASES.READY) {
           phase = PHASES.BOTTOM_HOLD;
           bottomHoldStartTime = timestampMs;
+          currentRepStartTime = timestampMs;
+          currentRepFaults.clear();
           lastCoachingMessage = 'Holding balance. Keep chest upright.';
         } else if (phase === PHASES.BOTTOM_HOLD) {
-          balanceHoldDurationMs += 50; // Incremented approx per tick or time diff
+          balanceHoldDurationMs += dt;
           if (trunkLean > config.maxTrunkLean) {
             currentRepFaults.add(FAULT_CODES.EXCESSIVE_TRUNK_LEAN);
             lastCoachingMessage = 'Excessive sway - steady your core';
           } else {
-            lastCoachingMessage = 'Great stability, hold steady!';
+            const holdSec = Math.round(balanceHoldDurationMs / 1000);
+            if (holdSec >= config.targetROM) {
+              lastCoachingMessage = `Target ${config.targetROM}s hold achieved! Outstanding balance.`;
+            } else {
+              lastCoachingMessage = `Holding steady: ${holdSec}s / ${config.targetROM}s`;
+            }
           }
         }
       } else {
         if (phase === PHASES.BOTTOM_HOLD) {
+          // Foot placed down - finalize hold rep
+          const duration = currentRepStartTime ? (timestampMs - currentRepStartTime) : balanceHoldDurationMs;
+          const minDur = config.minDurationMs || 3000;
+          const hasFaults = currentRepFaults.has(FAULT_CODES.EXCESSIVE_TRUNK_LEAN);
+          const isValid = duration >= minDur && !hasFaults;
+
+          if (duration >= 500) {
+            repCount++;
+            if (isValid) validRepCount++;
+            reps.push({
+              repNumber: repCount,
+              durationMs: duration,
+              peakDepth: Math.round(duration / 100) / 10,
+              targetDepth: config.targetROM,
+              minSymmetry: Math.round(symmetry * 10) / 10,
+              faults: Array.from(currentRepFaults),
+              valid: isValid,
+              timestampMs,
+            });
+          }
           phase = PHASES.READY;
           lastCoachingMessage = 'Foot down. Resume when ready.';
+          currentRepStartTime = null;
         } else {
           phase = PHASES.READY;
           lastCoachingMessage = 'Lift one foot to begin balance test';
@@ -297,6 +329,28 @@ export function createExerciseTracker(exerciseType = EXERCISE_TYPES.SQUAT, custo
   }
 
   function finishSet() {
+    // If finishing during an active balance hold, finalize the hold
+    if (exerciseType === EXERCISE_TYPES.BALANCE && phase === PHASES.BOTTOM_HOLD && currentRepStartTime) {
+      const duration = balanceHoldDurationMs;
+      const minDur = config.minDurationMs || 3000;
+      const hasFaults = currentRepFaults.has(FAULT_CODES.EXCESSIVE_TRUNK_LEAN);
+      const isValid = duration >= minDur && !hasFaults;
+      if (duration >= 500) {
+        repCount++;
+        if (isValid) validRepCount++;
+        reps.push({
+          repNumber: repCount,
+          durationMs: duration,
+          peakDepth: Math.round(duration / 100) / 10,
+          targetDepth: config.targetROM,
+          minSymmetry: Math.round(minSymmetryCurrentRep * 10) / 10,
+          faults: Array.from(currentRepFaults),
+          valid: isValid,
+          timestampMs: Date.now(),
+        });
+      }
+    }
+
     const totalReps = reps.length;
     const validCount = reps.filter(r => r.valid).length;
 

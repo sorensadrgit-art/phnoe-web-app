@@ -129,8 +129,9 @@ export function calculateHipAngle(shoulder, hip, knee, use3D = false) {
 /**
  * Calculate trunk lean (in degrees) relative to vertical.
  * Coordinate convention: Y increases downwards in screen space (typical webcam/canvas).
- * Upright spine: shoulderMid is directly above hipMid (dx = 0, dy < 0).
- * Lean from vertical: arccos( -dy / sqrt(dx^2 + dy^2) ).
+ * Upright spine: shoulderMid is directly above hipMid (dx = 0, dy < 0, dz = 0).
+ * Supports both 2D and 3D coordinates. When Z is present (e.g. MediaPipe pose),
+ * sagittal forward tilt is accurately captured in 3D.
  * Range: [0, 90] degrees.
  */
 export function calculateTrunkLean(shoulderMid, hipMid) {
@@ -139,12 +140,12 @@ export function calculateTrunkLean(shoulderMid, hipMid) {
   if (!s || !h) return null;
 
   const dx = s.x - h.x;
-  // If shoulder Y is less than hip Y, shoulder is higher (upright)
   const dy = s.y - h.y;
-  const length = Math.hypot(dx, dy);
+  const dz = s.z - h.z;
+  const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (length < 1e-9) return 0;
 
-  // Inverted Y: vector from hip up to shoulder is (dx, -dy)
+  // Inverted Y: vector from hip up to shoulder is (dx, -dy, dz)
   const upwardY = -dy;
   const cosTheta = Math.max(-1, Math.min(1, upwardY / length));
   const angle = Math.acos(cosTheta) * RAD2DEG;
@@ -155,15 +156,17 @@ export function calculateTrunkLean(shoulderMid, hipMid) {
  * Calculate knee valgus (degrees of medial deviation).
  * Frontal plane alignment: deviation of the knee medial to the mechanical axis (hip to ankle).
  *
- * For a subject facing camera:
- * - Left leg: Hip is to patient's left, medial is toward right (+X in image).
- * - Right leg: Hip is to patient's right, medial is toward left (-X in image).
- *
- * Positive value = Valgus (knees caving inward).
+ * Positive value = Valgus (knees caving inward towards body midline).
  * Zero = Neutral alignment (straight mechanical axis).
  * Negative value = Varus (bow-legged).
+ *
+ * @param {object} hip
+ * @param {object} knee
+ * @param {object} ankle
+ * @param {string} side - 'left' or 'right'
+ * @param {number|null} midlineX - Optional X coordinate of central body axis (midpoint of hips).
  */
-export function calculateKneeValgus(hip, knee, ankle, side = 'left') {
+export function calculateKneeValgus(hip, knee, ankle, side = 'left', midlineX = null) {
   const h = normalizePoint(hip);
   const k = normalizePoint(knee);
   const a = normalizePoint(ankle);
@@ -182,18 +185,24 @@ export function calculateKneeValgus(hip, knee, ankle, side = 'left') {
   if (thighLen < 1e-6) return 0;
 
   // Angle of deviation: approx arcsin(deviationX / thighLen)
-  const angleDeg = Math.asin(Math.max(-1, Math.min(1, deviationX / thighLen))) * RAD2DEG;
+  const angleDeg = Math.asin(Math.max(-1, Math.min(1, Math.abs(deviationX) / thighLen))) * RAD2DEG;
 
-  // In patient coordinate space facing camera:
-  // For Left leg (screen right usually, or user's left): medial movement is towards center
-  // If side is 'left', medial direction is towards user's center (usually rightwards from left leg in mirror)
-  const isLeft = String(side).toLowerCase().startsWith('l');
-  // For left leg, if knee collapses inward toward center, deviation direction depends on view.
-  // Standard clinical valgus is signed: inward collapse = positive.
-  // When looking at patient:
-  // Left knee collapsing inward means k.x moves toward midline (which is to the right of left hip if non-mirrored, or left if mirrored).
-  // We make sure the sign is consistent: positive = medial collapse (valgus).
-  const signedValgus = isLeft ? angleDeg : -angleDeg;
+  // Determine medial direction:
+  // If midlineX is known, moving toward midline is medial (valgus)
+  let isMedial = false;
+  if (midlineX !== null && Number.isFinite(midlineX)) {
+    if (h.x < midlineX) {
+      isMedial = deviationX > 0;
+    } else {
+      isMedial = deviationX < 0;
+    }
+  } else {
+    // Fallback based on side convention
+    const isLeft = String(side).toLowerCase().startsWith('l');
+    isMedial = isLeft ? deviationX > 0 : deviationX < 0;
+  }
+
+  const signedValgus = angleDeg < 1e-6 ? 0 : (isMedial ? angleDeg : -angleDeg);
   return Math.round(signedValgus * 10) / 10;
 }
 
@@ -251,8 +260,9 @@ export function computePoseKinematics(landmarks) {
   const leftHipAngle = calculateHipAngle(lShoulder, lHip, lKnee);
   const rightHipAngle = calculateHipAngle(rShoulder, rHip, rKnee);
   const trunkLean = calculateTrunkLean(shoulderMid, hipMid);
-  const leftValgus = calculateKneeValgus(lHip, lKnee, lAnkle, 'left');
-  const rightValgus = calculateKneeValgus(rHip, rKnee, rAnkle, 'right');
+  const midlineX = hipMid ? hipMid.x : null;
+  const leftValgus = calculateKneeValgus(lHip, lKnee, lAnkle, 'left', midlineX);
+  const rightValgus = calculateKneeValgus(rHip, rKnee, rAnkle, 'right', midlineX);
   const kneeSymmetry = calculateBilateralSymmetry(leftKneeFlexion, rightKneeFlexion);
 
   return {

@@ -53,6 +53,53 @@ function playChime(type = 'success') {
   } catch {}
 }
 
+// Extract 22 OpenSim marker coordinates from 33 MediaPipe pose landmarks
+function extractOsimMarkers(landmarks, mirrored = true) {
+  if (!landmarks) return null;
+  const get = (i) => {
+    const p = landmarks[i];
+    if (!p) return [0, 0, 0];
+    const rawX = (p.x - 0.5) * 1.8;
+    const x = mirrored ? -rawX : rawX;
+    const y = (1.0 - p.y) * 1.8 - 0.1;
+    const z = -(p.z || 0) * 1.5;
+    return [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000, Math.round(z * 1000) / 1000];
+  };
+
+  const lHip = get(23);
+  const rHip = get(24);
+  const hip = [(lHip[0] + rHip[0]) / 2, (lHip[1] + rHip[1]) / 2, (lHip[2] + rHip[2]) / 2];
+  const lShoulder = get(11);
+  const rShoulder = get(12);
+  const neck = [(lShoulder[0] + rShoulder[0]) / 2, (lShoulder[1] + rShoulder[1]) / 2, (lShoulder[2] + rShoulder[2]) / 2];
+  const nose = get(0);
+  const head = [nose[0], nose[1] + 0.1, nose[2]];
+
+  const rKnee = get(26);
+  const rAnkle = get(28);
+  const rBigToe = get(32);
+  const rSmallToe = [rBigToe[0] + 0.03, rBigToe[1], rBigToe[2]];
+  const rHeel = get(30);
+
+  const lKnee = get(25);
+  const lAnkle = get(27);
+  const lBigToe = get(31);
+  const lSmallToe = [lBigToe[0] - 0.03, lBigToe[1], lBigToe[2]];
+  const lHeel = get(29);
+
+  const rElbow = get(14);
+  const rWrist = get(16);
+  const lElbow = get(13);
+  const lWrist = get(15);
+
+  return [
+    hip, rHip, rKnee, rAnkle, rBigToe, rSmallToe, rHeel,
+    lHip, lKnee, lAnkle, lBigToe, lSmallToe, lHeel,
+    neck, head, nose, rShoulder, rElbow, rWrist,
+    lShoulder, lElbow, lWrist
+  ];
+}
+
 export default function LiveTrackerStudio({
   token,
   onSessionCreated,
@@ -79,13 +126,21 @@ export default function LiveTrackerStudio({
   const [liveLandmarks, setLiveLandmarks] = useState(null);
   const [liveKinematics, setLiveKinematics] = useState(null);
   const [trackerState, setTrackerState] = useState(null);
+  const [viewportSize, setViewportSize] = useState({ width: 640, height: 480 });
 
   const videoRef = useRef(null);
+  const cameraViewportRef = useRef(null);
   const streamRef = useRef(null);
   const trackerRef = useRef(null);
   const animFrameRef = useRef(null);
   const simulationStepRef = useRef(0);
   const lastRepCountRef = useRef(0);
+  const recordedFramesRef = useRef([]);
+  const lastFrameSampleTimeRef = useRef(0);
+  const setStartTimeRef = useRef(Date.now());
+  const opticalMotionCanvasRef = useRef(null);
+  const prevFramePixelsRef = useRef(null);
+  const liveDescentOffsetRef = useRef(0);
 
   // Initialize Exercise State Machine Tracker
   useEffect(() => {
@@ -170,41 +225,94 @@ export default function LiveTrackerStudio({
     };
   }, [selectedCamera, isSimulated]);
 
+  // Dynamic viewport measurement for responsive HUD overlay
+  useEffect(() => {
+    if (!cameraViewportRef.current) return;
+    const el = cameraViewportRef.current;
+    const updateSize = () => {
+      if (el.clientWidth && el.clientHeight) {
+        setViewportSize({ width: el.clientWidth, height: el.clientHeight });
+      }
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [layout]);
+
   // Main Tracking Loop (Realtime 30-60 FPS)
   useEffect(() => {
     let active = true;
 
-    function generateSimulatedPose(step) {
-      // Procedurally generate realistic squat / lunge cycles for biofeedback verification
+    function generateSimulatedPose(step, type = exerciseType) {
       const cycle = (step % 120) / 120.0; // 4 second full rep cycle at 30fps
-      // Smooth sinusoidal knee flexion between 10 deg (standing) and 90 deg (deep squat)
-      const squatDepth = 10 + (1.0 - Math.cos(cycle * 2 * Math.PI)) / 2.0 * 75;
-      const trunkLean = (squatDepth / 90) * 18; // 0 to 18 deg forward hinge
-
-      // 33 MediaPipe formatted normalized landmarks
       const marks = new Array(33).fill(null);
-      const kneeY = 0.65 + (squatDepth / 90) * 0.12;
-      const hipY = 0.50 + (squatDepth / 90) * 0.22;
-      const shoulderY = 0.25 + (squatDepth / 90) * 0.22;
 
-      // Hips, Knees, Ankles
-      marks[11] = { x: 0.44, y: shoulderY, z: -0.05, visibility: 0.99 }; // LShoulder
-      marks[12] = { x: 0.56, y: shoulderY, z: -0.05, visibility: 0.99 }; // RShoulder
+      let leftFlexDeg = 10;
+      let rightFlexDeg = 10;
+      let trunkLeanDeg = 0;
+      let squatDepthPct = 0;
+
+      if (type === EXERCISE_TYPES.BALANCE) {
+        // Stance leg (Right): straight, left leg lifted & bent
+        leftFlexDeg = 55 + Math.sin(cycle * 4 * Math.PI) * 4;
+        rightFlexDeg = 8 + Math.cos(cycle * 2 * Math.PI) * 2;
+        trunkLeanDeg = 6 + Math.sin(cycle * 2 * Math.PI) * 4; // Subtle natural postural sway
+      } else if (type === EXERCISE_TYPES.LUNGE) {
+        // Lead leg (Left) steps forward and bends deep; trail leg follows
+        squatDepthPct = (1.0 - Math.cos(cycle * 2 * Math.PI)) / 2.0;
+        leftFlexDeg = 15 + squatDepthPct * 75; // 15 to 90 deg
+        rightFlexDeg = 10 + squatDepthPct * 45; // trail knee
+        trunkLeanDeg = squatDepthPct * 12;
+      } else if (type === EXERCISE_TYPES.KNEE_EXTENSION) {
+        // Active leg (Left) extends from bent (85 deg) to straight (10 deg)
+        const extendPct = (1.0 - Math.cos(cycle * 2 * Math.PI)) / 2.0;
+        leftFlexDeg = 85 - extendPct * 75;
+        rightFlexDeg = 80;
+        trunkLeanDeg = 5;
+      } else {
+        // Squat: bilateral symmetrical knee flexion
+        squatDepthPct = (1.0 - Math.cos(cycle * 2 * Math.PI)) / 2.0;
+        leftFlexDeg = 10 + squatDepthPct * 75; // 10 to 85 deg
+        rightFlexDeg = 10 + squatDepthPct * 75;
+        trunkLeanDeg = squatDepthPct * 18;
+      }
+
+      // Depth ratios
+      const lDepthRatio = Math.max(0, (leftFlexDeg - 10) / 80);
+      const rDepthRatio = Math.max(0, (rightFlexDeg - 10) / 80);
+      const avgDepthRatio = (lDepthRatio + rDepthRatio) / 2;
+
+      const hipY = 0.50 + avgDepthRatio * 0.18;
+      const shoulderY = 0.25 + avgDepthRatio * 0.18;
+      const trunkSwayX = (trunkLeanDeg / 45) * 0.04;
+      const trunkLeanZ = -(trunkLeanDeg / 45) * 0.15; // 3D sagittal depth
+
+      // Hips, Shoulders
+      marks[11] = { x: 0.44 + trunkSwayX, y: shoulderY, z: -0.05 + trunkLeanZ, visibility: 0.99 }; // LShoulder
+      marks[12] = { x: 0.56 + trunkSwayX, y: shoulderY, z: -0.05 + trunkLeanZ, visibility: 0.99 }; // RShoulder
       marks[23] = { x: 0.45, y: hipY, z: 0, visibility: 0.99 }; // LHip
       marks[24] = { x: 0.55, y: hipY, z: 0, visibility: 0.99 }; // RHip
-      marks[25] = { x: 0.43, y: kneeY, z: 0.1, visibility: 0.99 }; // LKnee
-      marks[26] = { x: 0.57, y: kneeY, z: 0.1, visibility: 0.99 }; // RKnee
-      marks[27] = { x: 0.44, y: 0.88, z: 0.05, visibility: 0.99 }; // LAnkle
+
+      // Knees
+      const lKneeY = 0.68 + (type === EXERCISE_TYPES.BALANCE ? -0.08 : lDepthRatio * 0.08);
+      const rKneeY = 0.68 + rDepthRatio * 0.08;
+      marks[25] = { x: 0.43, y: lKneeY, z: 0.08, visibility: 0.99 }; // LKnee
+      marks[26] = { x: 0.57, y: rKneeY, z: 0.08, visibility: 0.99 }; // RKnee
+
+      // Ankles
+      const lAnkleY = type === EXERCISE_TYPES.BALANCE ? 0.78 : 0.88;
+      marks[27] = { x: 0.44, y: lAnkleY, z: 0.05, visibility: 0.99 }; // LAnkle
       marks[28] = { x: 0.56, y: 0.88, z: 0.05, visibility: 0.99 }; // RAnkle
 
       // Feet
-      marks[29] = { x: 0.44, y: 0.90, z: 0.05, visibility: 0.95 };
+      marks[29] = { x: 0.44, y: lAnkleY + 0.02, z: 0.05, visibility: 0.95 };
       marks[30] = { x: 0.56, y: 0.90, z: 0.05, visibility: 0.95 };
-      marks[31] = { x: 0.43, y: 0.92, z: 0.2, visibility: 0.95 };
-      marks[32] = { x: 0.57, y: 0.92, z: 0.2, visibility: 0.95 };
+      marks[31] = { x: 0.43, y: lAnkleY + 0.04, z: 0.18, visibility: 0.95 };
+      marks[32] = { x: 0.57, y: 0.92, z: 0.18, visibility: 0.95 };
 
       // Head
-      marks[0] = { x: 0.5, y: shoulderY - 0.12, z: -0.08, visibility: 0.99 };
+      marks[0] = { x: 0.50 + trunkSwayX, y: shoulderY - 0.12, z: -0.08 + trunkLeanZ, visibility: 0.99 };
 
       // Arms
       marks[13] = { x: 0.40, y: shoulderY + 0.15, z: 0.05, visibility: 0.95 };
@@ -219,16 +327,8 @@ export default function LiveTrackerStudio({
       if (!active) return;
 
       if (isTracking && trackerRef.current) {
-        let landmarks = null;
-
-        if (isSimulated || !videoRef.current || videoRef.current.readyState < 2) {
-          simulationStepRef.current += 1;
-          landmarks = generateSimulatedPose(simulationStepRef.current);
-        } else {
-          // In real browser camera mode, use synthesized or detector coordinates
-          simulationStepRef.current += 1;
-          landmarks = generateSimulatedPose(simulationStepRef.current);
-        }
+        simulationStepRef.current += 1;
+        const landmarks = generateSimulatedPose(simulationStepRef.current, exerciseType);
 
         setLiveLandmarks(landmarks);
 
@@ -239,6 +339,19 @@ export default function LiveTrackerStudio({
         // Exercise State Machine Update
         const nextState = trackerRef.current.update(kine, Date.now());
         setTrackerState(nextState);
+
+        // Record OpenSim motion frames during active reps
+        if (nextState.phase !== PHASES.IDLE) {
+          const nowMs = Date.now();
+          if (!lastFrameSampleTimeRef.current || (nowMs - lastFrameSampleTimeRef.current) >= 50) {
+            lastFrameSampleTimeRef.current = nowMs;
+            const t = setStartTimeRef.current ? (nowMs - setStartTimeRef.current) / 1000 : 0;
+            const osimXYZ = extractOsimMarkers(landmarks, mirrored);
+            if (osimXYZ) {
+              recordedFramesRef.current.push({ t: Math.round(t * 1000) / 1000, xyz: osimXYZ });
+            }
+          }
+        }
 
         // Sound chime on rep completion
         if (audioEnabled && nextState.repCount > lastRepCountRef.current) {
@@ -256,11 +369,12 @@ export default function LiveTrackerStudio({
       active = false;
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isTracking, isSimulated, audioEnabled]);
+  }, [isTracking, isSimulated, audioEnabled, exerciseType, mirrored]);
 
   const handleFinishSet = useCallback(() => {
     if (!trackerRef.current) return;
     const summary = trackerRef.current.finishSet();
+    summary.frames = [...recordedFramesRef.current];
     setSetSummary(summary);
     setShowSummary(true);
     setSaveResult(null);
@@ -271,6 +385,9 @@ export default function LiveTrackerStudio({
       trackerRef.current.reset();
       setTrackerState(trackerRef.current.getState());
       lastRepCountRef.current = 0;
+      recordedFramesRef.current = [];
+      lastFrameSampleTimeRef.current = 0;
+      setStartTimeRef.current = Date.now();
     }
     setShowSummary(false);
     setSaveResult(null);
@@ -286,6 +403,7 @@ export default function LiveTrackerStudio({
       patient_id: patientId || 'PT-PATIENT-01',
       summary_metrics: setSummary,
       reps: setSummary.reps || [],
+      frames: setSummary.frames || [],
     };
 
     try {
@@ -461,7 +579,7 @@ export default function LiveTrackerStudio({
       {/* Main Viewport Container */}
       <div className={`uw-live-viewport-container layout-${layout}`}>
         {/* Camera Feed & HUD Overlay */}
-        <div className="uw-camera-viewport">
+        <div ref={cameraViewportRef} className="uw-camera-viewport">
           <video
             ref={videoRef}
             autoPlay
@@ -475,7 +593,7 @@ export default function LiveTrackerStudio({
             <div className="uw-synthetic-feed-backdrop">
               <div className="uw-grid-pattern" />
               <div className="uw-synthetic-badge">
-                SYNTHETIC SQUAT FEED ACTIVE (30 FPS)
+                SYNTHETIC {exerciseType.toUpperCase()} FEED ACTIVE (30 FPS)
               </div>
             </div>
           )}
@@ -485,8 +603,8 @@ export default function LiveTrackerStudio({
             kinematics={liveKinematics}
             trackerState={trackerState}
             mirrored={mirrored}
-            width={layout === 'split' ? 640 : 800}
-            height={layout === 'split' ? 480 : 540}
+            width={viewportSize.width}
+            height={viewportSize.height}
           />
         </div>
 

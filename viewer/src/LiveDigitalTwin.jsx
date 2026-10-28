@@ -14,7 +14,19 @@ const MP_CONNECTIONS = [
   [24, 26], [26, 28], [28, 32], // Right leg
 ];
 
-const MAJOR_JOINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32];
+function getNeutralPositions() {
+  const pts = Array.from({ length: 33 }, () => new THREE.Vector3(0, 0, 0));
+  pts[0].set(0, 1.45, 0);
+  pts[11].set(-0.18, 1.25, 0); pts[12].set(0.18, 1.25, 0);
+  pts[13].set(-0.24, 0.95, 0); pts[14].set(0.24, 0.95, 0);
+  pts[15].set(-0.26, 0.68, 0); pts[16].set(0.26, 0.68, 0);
+  pts[23].set(-0.10, 0.85, 0); pts[24].set(0.10, 0.85, 0);
+  pts[25].set(-0.11, 0.44, 0); pts[26].set(0.11, 0.44, 0);
+  pts[27].set(-0.11, 0.05, 0); pts[28].set(0.11, 0.05, 0);
+  pts[29].set(-0.11, 0.05, 0); pts[30].set(0.11, 0.05, 0);
+  pts[31].set(-0.11, 0.02, 0.12); pts[32].set(0.11, 0.02, 0.12);
+  return pts;
+}
 
 function AvatarRig({ landmarks, mirrored = true, targetROM = 80, currentDepth = 0 }) {
   const jointsRef = useRef([]);
@@ -24,35 +36,36 @@ function AvatarRig({ landmarks, mirrored = true, targetROM = 80, currentDepth = 
   const vecB = useMemo(() => new THREE.Vector3(), []);
   const dir = useMemo(() => new THREE.Vector3(), []);
 
-  // Smooth lerp coordinates
-  const currentPositions = useRef(
-    Array.from({ length: 33 }, () => new THREE.Vector3(0, 0, 0))
-  );
+  // Smooth lerp coordinates starting from neutral standing posture
+  const currentPositions = useRef(getNeutralPositions());
 
   useFrame((_, delta) => {
-    if (!landmarks || landmarks.length === 0) return;
-
     const lerpFactor = Math.min(1.0, delta * 25); // Responsive 60fps tracking
 
-    // Map landmarks to 3D coordinate space
+    if (landmarks && landmarks.length > 0) {
+      // Map landmarks to 3D coordinate space
+      for (let i = 0; i < 33; i++) {
+        const p = landmarks[i];
+        if (!p) continue;
+
+        const rawX = (p.x - 0.5) * 1.8;
+        const targetX = mirrored ? -rawX : rawX;
+        // Invert Y so 0 is ground / hips at ~0.9m
+        const targetY = (1.0 - p.y) * 1.8 - 0.1;
+        const targetZ = -(p.z || 0) * 1.5;
+
+        const curr = currentPositions.current[i];
+        curr.x += (targetX - curr.x) * lerpFactor;
+        curr.y += (targetY - curr.y) * lerpFactor;
+        curr.z += (targetZ - curr.z) * lerpFactor;
+      }
+    }
+
+    // Always update mesh positions
     for (let i = 0; i < 33; i++) {
-      const p = landmarks[i];
-      if (!p) continue;
-
-      const rawX = (p.x - 0.5) * 1.8;
-      const targetX = mirrored ? -rawX : rawX;
-      // Invert Y so 0 is ground / hips at ~0.9m
-      const targetY = (1.0 - p.y) * 1.8 - 0.1;
-      const targetZ = -(p.z || 0) * 1.5;
-
-      const curr = currentPositions.current[i];
-      curr.x += (targetX - curr.x) * lerpFactor;
-      curr.y += (targetY - curr.y) * lerpFactor;
-      curr.z += (targetZ - curr.z) * lerpFactor;
-
       const jointMesh = jointsRef.current[i];
       if (jointMesh) {
-        jointMesh.position.copy(curr);
+        jointMesh.position.copy(currentPositions.current[i]);
       }
     }
 

@@ -69,10 +69,19 @@ Original video captures (`cam02_board.mp4` and `cam02_trial.mp4`) were preserved
   - `cam02_trial.mp4`: `BE641DAE4C5CA92FA67B1619048800AF7D62EBB06C1184109D6E55CE09027C13` (100% MATCH)
 - Documented physical evidence blockers in `docs/PHYSICAL_VALIDATION_PENDING.md`.
 
+### G10: Live Tracker Studio & Real-Time Biofeedback
+- Implemented camera-first live tracking studio (`viewer/src/LiveTrackerStudio.jsx`) with device selector, mirror toggle, and simulated pose generator.
+- Implemented vector kinematics engine (`viewer/src/liveKinematics.js`) computing knee flexion, hip angle, 3D sagittal trunk lean, knee valgus with pelvic midline reference, and bilateral symmetry.
+- Implemented exercise finite state machine (`viewer/src/exerciseStateMachine.js`) tracking Squats, Lunges, Knee Extension, and Single-Leg Balance with dynamic $\Delta t$ hold timers and form fault detection.
+- Implemented high-contrast canvas HUD overlay (`viewer/src/LiveHUDOverlay.jsx`) with glowing skeleton lines, anchored angle degree labels, dynamic target depth arc gauge, and coaching alerts.
+- Implemented real-time Three.js 3D skeleton digital twin avatar (`viewer/src/LiveDigitalTwin.jsx`) with 360° orbit controls.
+- Implemented post-set summary modal (`viewer/src/LiveSetSummaryModal.jsx`) and backend ingestion API (`POST /api/v1/sessions/live-set`).
+- Implemented dedicated Live Biofeedback vector PDF report builder in `report_builder.py` with Matplotlib trajectory subplots.
+
 ---
 
 ## 3. Test Verification Metrics
-- **Python Unit Tests**: **214 passed**, 0 failed, 0 errors (ran in 52s).
-- **JavaScript Unit Tests**: **27 passed**, 0 failed, 0 errors (ran in 111ms).
-- **Vite Build**: Built in 7.48s, 0 errors.
-- **Distribution Integrity**: 37/37 files verified against manifest, 0 mismatches.
+- **Python Unit Tests**: **223 passed**, 0 failed, 0 errors (ran in 55.6s across 23 modules).
+- **JavaScript Unit Tests**: **43 passed**, 0 failed, 0 errors (ran in 112ms across 6 test suites).
+- **Vite Build**: Compiled production bundle in 11.24s with 0 errors.
+- **Distribution Integrity**: 45/45 packaged files verified against manifest, 100% match (`dist/KineLabPT-v1.0.0-windows-x64.zip`, 710,453 bytes, SHA-256: `ee627f33a07977b8972c7a0c8ddc0edc2d2b406c253c5f4be4dc96163ff538e5`).
