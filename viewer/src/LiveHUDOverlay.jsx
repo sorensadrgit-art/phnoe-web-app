@@ -2,6 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { PHASES } from './exerciseStateMachine.js';
 
 /**
+ * Major MediaPipe joints highlighted on HUD (shoulders, hips, knees, ankles).
+ */
+const MAJOR_JOINTS = new Set([11, 12, 23, 24, 25, 26, 27, 28]);
+
+/**
  * Standard MediaPipe skeleton bone connections.
  */
 const POSE_CONNECTIONS = [
@@ -62,9 +67,13 @@ export default function LiveHUDOverlay({
     const mapY = (y) => (y <= 1.0 ? y * height : y);
 
     // 1. Draw Skeleton Bones
+    // Bolt Optimization: Set shadow parameters once outside the rendering loop
+    // to prevent redundant 2D context updates on every bone segment at 60 FPS.
     ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.shadowColor = '#00f3ff';
+    ctx.shadowBlur = 6;
 
     for (const [i1, i2] of POSE_CONNECTIONS) {
       const p1 = landmarks[i1];
@@ -84,8 +93,6 @@ export default function LiveHUDOverlay({
       grad.addColorStop(1, '#10b981');
 
       ctx.strokeStyle = grad;
-      ctx.shadowColor = '#00f3ff';
-      ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
@@ -101,7 +108,9 @@ export default function LiveHUDOverlay({
       const y = mapY(p.y);
 
       // Primary joints (shoulders, hips, knees, ankles) are highlighted
-      const isMajor = [11, 12, 23, 24, 25, 26, 27, 28].includes(i);
+      // Bolt Optimization: Use module-scope MAJOR_JOINTS Set instead of allocating
+      // a new array and calling includes() for every landmark on every frame (60 FPS).
+      const isMajor = MAJOR_JOINTS.has(i);
       const radius = isMajor ? 6 : 4;
 
       ctx.beginPath();
