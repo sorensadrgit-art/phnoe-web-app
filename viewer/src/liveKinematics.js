@@ -22,6 +22,11 @@ export function normalizePoint(p) {
   if (typeof p.x !== 'number' || typeof p.y !== 'number' || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
     return null;
   }
+  // Bolt Optimization: If p is already a point object with finite x, y, and z,
+  // return p directly to avoid temporary object allocation per landmark at 60 FPS.
+  if (typeof p.z === 'number' && Number.isFinite(p.z)) {
+    return p;
+  }
   return { x: p.x, y: p.y, z: Number.isFinite(p.z) ? p.z : 0 };
 }
 
