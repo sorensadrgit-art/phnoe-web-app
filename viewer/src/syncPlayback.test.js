@@ -92,6 +92,13 @@ test('angle series is unavailable when marker-only; valid angles preserve gaps',
  assert.equal(Math.round(right[0].value),90);
  assert.equal(Math.round(right[1].value),90);
  assert.equal(right[2].value,null);
+
+ // Bolt Optimization verification: Repeated calls return the exact cached reference
+ const cachedRight=angleSamples(f.motion,'knee_angle_r');
+ assert.equal(cachedRight, right);
+ const left=angleSamples(f.motion,'knee_angle_l');
+ assert.notEqual(left, right);
+ assert.equal(Math.round(left[0].value),60);
 });
 
 test('local browser file digest verifies actual bytes without a network request',async()=>{
