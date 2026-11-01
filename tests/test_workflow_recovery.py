@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from session_library import SessionLibrary
 from workflow_recovery import (
-    RecoveryBlocked, inspect_recovery, archive_orphaned_lock,
+    RecoveryBlocked,
+    archive_orphaned_lock,
+    inspect_recovery,
 )
 
 

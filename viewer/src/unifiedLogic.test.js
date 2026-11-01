@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {NAV_ITEMS,phaseStatus,canEdit,roleDevice,appIdentity} from './unifiedLogic.js';
+import {NAV_ITEMS as CANONICAL_NAV_ITEMS} from './unifiedModel.js';
 
-test('single integrated shell has all six actual workflow sections',()=>{
+test('N02-NAV-001 canonical navigation compatibility uses the active production identity',()=>{
+ assert.strictEqual(NAV_ITEMS,CANONICAL_NAV_ITEMS);
  assert.deepEqual(NAV_ITEMS.map(x=>x.id),[
-  'overview','sessions','capture','process','motion','analysis','reports','diagnostics',
+  'overview','live','sessions','capture','processing','motion','analysis','reports','diagnostics',
  ]);
  assert.equal(new Set(NAV_ITEMS.map(x=>x.id)).size,NAV_ITEMS.length);
  assert.ok(NAV_ITEMS.every(x=>x.label&&x.icon));

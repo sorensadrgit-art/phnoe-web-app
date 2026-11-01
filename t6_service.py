@@ -6,31 +6,46 @@ No clinical accuracy or 3D reconstruction is inferred from test footage.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
-from pathlib import Path
-import csv
 import json
-import math
+import logging
 import os
 import re
 import subprocess
 import sys
 import threading
+import time
+from datetime import UTC
+from pathlib import Path
 from uuid import uuid4
 
+import manual_assessment_entry
+from backup_manager import BackupCorruptError, BackupManager
+from backup_schedule import BackupSchedule, BackupScheduleError
 from capture_station import (
-    RAW_ROLES, ROLE_GUIDE, RECOMMENDED_SECONDS, WEBCAM_ROLES,
-    prepare_recording, ffmpeg_command, finalize_recording,
-    import_phone_mp4, save_board_measurement
+    PARTICIPANT_RECORDING_BLOCKED,
+    RAW_ROLES,
+    RECOMMENDED_SECONDS,
+    ROLE_GUIDE,
+    WEBCAM_ROLES,
+    finalize_recording,
+    import_phone_mp4,
+    save_board_measurement,
 )
-from session_library import SessionLibrary, SessionError
-from workflow_controller import WorkflowController, WorkflowBlocked
-from workflow_recovery import inspect_recovery
-from session_index import SessionIndex
+from local_diagnostics import log_local_failure
+from pose_inference import PoseInference
+from recording_store import RecordingStore
 from report_builder import ReportBuilder
-from backup_manager import BackupManager
+from report_generation import OMITTED, current_report_generation_context
+from runtime_config import ensure_data_root, runtime_identity
+from session_index import SessionIndex
+from session_library import SessionLibrary
+from session_metadata_revision import publish_metadata_revision, read_metadata_state
+from unified_service import WorkflowJobJournal
+from workflow_controller import WorkflowController
+from workflow_recovery import inspect_recovery
 
 ROOT = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
 DEFAULT_PROJECT = ROOT / "projects" / "capture-20261026-trial01"
 CALISCOPE = "caliscope-walking-test-20261027"
 ALLOWED_REPORTS = {
@@ -44,40 +59,92 @@ class IntegrationBlocked(ValueError):
 
 
 class IntegratedService:
-    def __init__(self, projects_root: Path | None = None):
-        self.projects_root = (Path(projects_root) if projects_root is not None
-                              else ROOT / "projects").resolve()
-        self.library = SessionLibrary(self.projects_root)
+    def __init__(self, projects_root: Path | None = None, *, pose_models: Path | None = None):
+        self.projects_root = ensure_data_root(projects_root)
+        self.runtime_id = runtime_identity(self.projects_root)
         self.mutex = threading.RLock()
         self.jobs: dict[str, WorkflowController] = {}
+        self.job_journals: dict[str, WorkflowJobJournal] = {}
+        self.instance_id = uuid4().hex
+        self._closed = False
         self.webcam: dict | None = None
         self.webcam_latest: dict[str, dict] = {}
-        db_path = self.projects_root / ".kinelab_index.db"
-        self.index = SessionIndex(db_path, self.projects_root)
+        self.backup_mgr = BackupManager(self.projects_root)
+        self.backup_schedule = BackupSchedule(self.backup_mgr)
+        self.backup_schedule.recover(now=int(time.time()), strict=False)
+        self.backup_pump = None  # D05/D08 OPEN: no production worker may start.
+        with self.backup_mgr.startup_recovery():
+            self.library = SessionLibrary(self.projects_root)
+            db_path = self.projects_root / ".kinelab_index.db"
+            self.index = SessionIndex(db_path, self.projects_root)
+            self.backup_mgr.index = self.index
+        self.recordings = RecordingStore(self.index)
         self.report_builder = ReportBuilder(self.projects_root, self.index)
-        self.backup_mgr = BackupManager(self.projects_root, self.index)
+        self.pose_inference = PoseInference(pose_models if pose_models is not None else ROOT / 'models' / 'pose-v1')
 
     def close(self):
-        if hasattr(self, "index") and self.index:
-            self.index.close()
+        mutex = getattr(self, "mutex", None)
+        if mutex is None:
+            return
+        # Join outside service.mutex: a worker may be waiting for that mutex.
+        pump_failure = None
+        pump = getattr(self, "backup_pump", None)
+        if pump is not None:
+            try:
+                pump.close()
+            except BackupScheduleError as error:
+                if pump.thread.is_alive():
+                    raise  # Preserve its index until the owned worker actually exits.
+                pump_failure = error
+        with mutex:
+            if getattr(self, "_closed", False):
+                return
+            failure = pump_failure
+            try:
+                for journal in getattr(self, "job_journals", {}).values():
+                    if journal.operation_id is not None:
+                        try:
+                            journal.interrupt()
+                        except (OSError, ValueError) as error:
+                            failure = failure or error
+            finally:
+                if hasattr(self, "index") and self.index:
+                    self.index.close()
+            if failure is not None:
+                raise failure
+            self._closed = True
 
     def __del__(self):
-        self.close()
+        try:
+            self.close()
+        except Exception as error:  # noqa: BLE001 - Best-effort cleanup uses bounded privacy-safe diagnostics.
+            log_local_failure(logger, logging.ERROR, "local_service_cleanup_failed", error)
 
     def sessions(self) -> list[dict]:
         with self.mutex:
-            return [{key: value for key, value in item.items() if key != "path"}
-                    for item in self.library.list_sessions()]
+            sessions = []
+            for item in self.library.list_sessions():
+                metadata_state = read_metadata_state(self.index, item["id"])
+                sessions.append({
+                    **{key: value for key, value in item.items() if key != "path"},
+                    "metadata_state": metadata_state,
+                    "effective_metadata": metadata_state["metadata"] if metadata_state["status"] == "AVAILABLE" else None,
+                    "metadata_context_sha256": metadata_state["context_sha256"] if metadata_state["status"] == "AVAILABLE" else None,
+                })
+            return sessions
 
-    def create_session(self, session_id: str, *, kind: str = "real") -> dict:
+    def create_session(self, session_id: str, *, kind: str = "real", metadata: dict | None = None) -> dict:
         if kind != "real":
             # Demo folders may be created via original setup tooling; the
             # consumer integrated shell only creates real unregistered sessions.
             raise IntegrationBlocked("This app creates only REAL unregistered sessions")
         with self.mutex:
-            folder = self.library.create_session(session_id, kind=kind)
-            return {key: value for key, value in self.library.describe_session(folder.name).items()
-                    if key != "path"}
+            if self.index.conn.execute("SELECT 1 FROM recordings WHERE session_id=?", (session_id,)).fetchone():
+                raise IntegrationBlocked("RECORDING_CONFLICT: synthetic recording identity cannot become a native session")
+            folder = self.library.create_session(session_id, kind=kind, metadata=metadata)
+            return {**{key: value for key, value in self.library.describe_session(folder.name).items()
+                       if key != "path"},
+                    "metadata_confirmation": self.library.metadata_confirmation(folder.name)}
 
     def _project(self, session_id: str) -> Path:
         return self.library.open_session(session_id)
@@ -125,13 +192,18 @@ class IntegratedService:
                 for name in ("session.json", "board-measurement.json", "normalization.json",
                              "preflight.json", "sync-observations.json", "sync.json", "run.json")
             }
+            metadata_state = read_metadata_state(self.index, session_id)
             return {
                 **{key: value for key, value in info.items() if key != "path"}, "roles": roles,
                 "missing": readiness.get("missing", []),
                 "issues": readiness.get("issues", []),
                 "ready_to_register": bool(readiness.get("ready_to_register")),
                 "sources": sources,
-                "measurement_status": "physical_camera_and_clinical_validation_unverified",
+                "metadata_confirmation": self.library.metadata_confirmation(session_id),
+                "metadata_state": metadata_state,
+                "effective_metadata": metadata_state["metadata"] if metadata_state["status"] == "AVAILABLE" else None,
+                "metadata_context_sha256": metadata_state["context_sha256"] if metadata_state["status"] == "AVAILABLE" else None,
+                "measurement_status": "EVIDENCE_UNVERIFIED" if info["evidence_status"] == "unverified" else "physical_camera_and_clinical_validation_unverified",
                 "test_only": info["kind"] == "test-only",
             }
 
@@ -140,7 +212,9 @@ class IntegratedService:
             raise IntegrationBlocked("Explicit operator confirm required before registration")
         with self.mutex:
             self._editable(session_id)
-            return self.library.register_session(session_id)
+            result = self.library.register_session(session_id)
+            self.index.reindex()
+            return result
 
     def measure_board(self, session_id: str, mm: float, operator: str, *, confirm: bool):
         if confirm is not True:
@@ -149,6 +223,8 @@ class IntegratedService:
             return save_board_measurement(self._editable(session_id), mm, operator)
 
     def import_phone(self, session_id: str, role: str, temp_file: Path, *, confirm: bool):
+        if role == "cam01_trial":
+            raise IntegrationBlocked(PARTICIPANT_RECORDING_BLOCKED)
         if confirm is not True:
             raise IntegrationBlocked("Explicit phone-file import confirmation required")
         if role not in ("cam01_intrinsics", "cam01_board", "cam01_trial"):
@@ -172,7 +248,11 @@ class IntegratedService:
             saved = finalize_recording(self._project(info["session"]), info["role"])
             result = {"state": "saved", "session_id": info["session"], "role": info["role"],
                       "message": "Verified MP4 published; original not overwritten", "filename": saved.name}
-        except (OSError, ValueError) as error:
+        except OSError as error:
+            log_local_failure(logger, logging.WARNING, "capture_status_storage_error", error)
+            result = {"state": "failed", "session_id": info["session"], "role": info["role"],
+                      "message": "CAPTURE_FINALIZE_FAILED: local storage error; unverified recording preserved"}
+        except ValueError as error:
             result = {"state": "failed", "session_id": info["session"], "role": info["role"],
                       "message": str(error)}
         finally:
@@ -199,26 +279,7 @@ class IntegratedService:
             raise IntegrationBlocked("Explicit webcam recording consent required")
         if role not in WEBCAM_ROLES:
             raise IntegrationBlocked("Only cam02 webcam roles can use local webcam recording")
-        with self.mutex:
-            self._poll_webcam()
-            if self.webcam is not None:
-                raise IntegrationBlocked("Webcam busy; stop or finish the current recording")
-            project = self._editable(session_id)
-            _output, partial = prepare_recording(project, role, seconds)
-            log = (project / "capture-station-t6.log").open("ab")
-            try:
-                process = subprocess.Popen(
-                    ffmpeg_command(partial, seconds),
-                    cwd=str(ROOT), stdin=subprocess.PIPE,
-                    stdout=subprocess.DEVNULL, stderr=log,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-            finally:
-                log.close()
-            self.webcam = {
-                "process": process, "session": session_id, "role": role, "seconds": seconds,
-            }
-            return self._poll_webcam()
+        raise IntegrationBlocked(PARTICIPANT_RECORDING_BLOCKED)
 
     def stop_webcam(self, session_id: str, *, confirm: bool) -> dict:
         if confirm is not True:
@@ -238,18 +299,22 @@ class IntegratedService:
             return {"state": "stopping", "session_id": session_id,
                     "message": "Graceful stop requested. MP4 is not saved until verified."}
 
+    def _job_journal(self, session_id: str) -> WorkflowJobJournal:
+        project = self._project(session_id)
+        if session_id not in self.job_journals:
+            self.job_journals[session_id] = WorkflowJobJournal(project, self.instance_id)
+        return self.job_journals[session_id]
+
     def processing_status(self, session_id: str) -> dict:
         with self.mutex:
-            self._project(session_id)
+            journal = self._job_journal(session_id)
             job = self.jobs.get(session_id)
             if job is None:
-                return {"state": "idle", "action": None, "passed": False, "message": "No job active"}
+                return journal.status()
             status = job.poll()
-            return {
-                "state": status.state, "action": status.action,
-                "passed": status.passed, "message": status.message,
-                "log_file": status.log_path.name if status.log_path else None,
-            }
+            result = journal.observe(status)
+            result["log_file"] = status.log_path.name if status.log_path else None
+            return result
 
     def start_processing(self, session_id: str, action: str, *, confirm: bool) -> dict:
         if confirm is not True:
@@ -259,14 +324,27 @@ class IntegratedService:
             if self.webcam is not None and self._poll_webcam().get("state") == "recording":
                 raise IntegrationBlocked("Cannot start native processing while the webcam is recording")
             old = self.jobs.get(session_id)
-            if old is not None and old.poll().state == "running":
-                raise IntegrationBlocked("Native processing busy for this session")
+            journal = self._job_journal(session_id)
+            if old is not None:
+                previous = old.poll()
+                if previous.state == "running":
+                    raise IntegrationBlocked("Native processing busy for this session")
+                journal.observe(previous)
+            if journal.status()["recovery_required"]:
+                raise IntegrationBlocked("Job recovery required before native processing")
             job = WorkflowController(self._project(session_id))
             job.plan(action)  # fail closed before any subprocess is created
-            status = job.start(action)
+            journal.begin(action)
             self.jobs[session_id] = job
-            return {"state": status.state, "action": status.action, "passed": False,
-                    "message": status.message}
+            try:
+                status = job.start(action)
+            except BaseException:
+                try:
+                    journal.interrupt()
+                finally:
+                    self.jobs.pop(session_id, None)
+                raise
+            return journal.observe(status)
 
     def cancel_processing(self, session_id: str, *, confirm: bool) -> dict:
         if confirm is not True:
@@ -292,48 +370,148 @@ class IntegratedService:
             if exports.is_dir() and not exports.is_symlink():
                 for file in sorted(exports.iterdir()):
                     if (file.is_file() and not file.is_symlink()
-                            and (file.name.endswith(".motion.json") or file.name.endswith(".pdf")
-                                 or file.name.endswith(".csv") or file.name.endswith("-research-summary.json"))
+                            and file.name.endswith(".motion.json")
                             and file.parent.resolve() == exports.resolve()):
-                        ftype = "research_report" if file.suffix in (".pdf", ".csv", ".json") else "motion_export"
                         files.append({
                             "filename": file.name, "key": "exports/" + file.name,
-                            "type": ftype, "bytes": file.stat().st_size,
+                            "type": "motion_export", "bytes": file.stat().st_size,
                         })
+            from report_generation import committed_reports
+            files.extend(committed_reports(self.index, session_id))
             return files
 
     def passport(self, session_id: str) -> dict:
         with self.mutex:
-            self.index.reindex()
-            return self.index.get_passport(session_id)
+            changed_timing_sources = self.index.reindex() or set()
+            passport = self.index.get_passport(session_id)
+            try:
+                source = self.index._research_source(session_id)
+                if session_id in changed_timing_sources:
+                    raise ValueError("TIMING_SOURCE_CHANGED")
+                passport["timing"] = source["timing"]
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                code = ("TIMING_SOURCE_CHANGED" if session_id in changed_timing_sources
+                        else str(error).split(":", 1)[0])
+                if code not in {"TIMING_SOURCE_CHANGED", "TIMING_METADATA_CHANGED"}:
+                    code = "TIMING_SOURCE_UNAVAILABLE"
+                passport["timing"] = {
+                    "schema": "kinelab.reconstruction-timing.v1",
+                    "status": "UNAVAILABLE", "code": code, "reason": code,
+                    "duration_s": None, "segments": [], "gaps": [], "intervals": [],
+                    "physical_accuracy_verified": False,
+                    "clinical_accuracy_verified": False,
+                    "clinical_validation": "UNVERIFIED",
+                }
+            return passport
 
     def motion_data(self, session_id: str) -> dict:
         with self.mutex:
+            if self.library.describe_session(session_id)["evidence_status"] == "unverified":
+                raise IntegrationBlocked("EVIDENCE_UNVERIFIED: legacy live motion cannot be served as verified tracking")
             project = self._project(session_id)
+            self.index.reindex()
+            if self.index.get_passport(session_id)["state"] == "EVIDENCE_INVALID":
+                raise IntegrationBlocked("EVIDENCE_INVALID: changed or missing source evidence")
             exports = project / "exports"
             if exports.is_dir() and not exports.is_symlink():
-                for file in exports.glob("*.motion.json"):
-                    if file.is_file() and not file.is_symlink():
-                        try:
-                            return json.loads(file.read_text(encoding="utf-8"))
-                        except Exception as e:
-                            raise ValueError(f"Invalid motion file: {e}")
-            if session_id == "caliscope-walking-test-20261027":
-                demo_path = ROOT / "viewer" / "dist" / "motion" / "demo.motion.json"
-                if demo_path.is_file():
-                    return json.loads(demo_path.read_text(encoding="utf-8"))
+                files = sorted(exports.glob("*.motion.json"))
+                if len(files) > 1:
+                    raise IntegrationBlocked("EVIDENCE_INVALID: multiple motion revisions require explicit selection")
+                if files:
+                    from export_motion import load_verified_motion
+                    data = load_verified_motion(project, files[0])
+                    if data["schema"] == "kinelab.motion.v1":
+                        return {**data, "sessionId": session_id, "kind": "synthetic", "sourceKind": "synthetic",
+                                "physical_accuracy_verified": False, "clinical_accuracy_verified": False}
+                    return data
             raise FileNotFoundError(f"No motion JSON found for session {session_id}")
 
-    def compare(self, s1: str, s2: str) -> dict:
+    def compare(self, s1: str, s2: str, *, expected_metadata_context_s1: str | None = None,
+                expected_metadata_context_s2: str | None = None) -> dict:
         with self.mutex:
-            self.index.reindex()
-            return self.index.compare_sessions(s1, s2)
+            changed_timing_sources = self.index.reindex() or set()
+            result = self.index.compare_sessions(
+                s1, s2, expected_metadata_context_s1=expected_metadata_context_s1,
+                expected_metadata_context_s2=expected_metadata_context_s2)
+            if changed_timing_sources.intersection((s1, s2)):
+                result["compatible"] = False
+                result["reason"] = ((result["reason"] + "; ") if result["reason"] else "") + "TIMING_SOURCE_CHANGED"
+                result["research_measurements"]["status"] = "UNAVAILABLE"
+                result["research_measurements"]["coordinates"] = []
+                result["research_measurements"]["sessions"] = []
+            return result
 
-    def generate_reports(self, session_id: str, *, confirm: bool) -> dict:
+    def publish_metadata_revision(self, session_id: str, request: dict) -> dict:
+        fields = {"metadata", "expected_origin_sha256", "expected_head_sha256",
+                  "operation_id", "reason_code", "confirm"}
+        if not isinstance(request, dict) or set(request) != fields:
+            raise IntegrationBlocked("METADATA_INVALID: exact revision request fields required")
+        with self.mutex:
+            if self._closed:
+                raise IntegrationBlocked("METADATA_UNAVAILABLE: service closed")
+            if self.webcam is not None:
+                raise IntegrationBlocked("METADATA_BUSY: capture active")
+            try:
+                running = any(job.poll().state == "running" for job in self.jobs.values())
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise IntegrationBlocked("METADATA_UNAVAILABLE: processing state unavailable") from error
+            if running:
+                raise IntegrationBlocked("METADATA_BUSY: processing active")
+            # The publisher owns the single session OS lease and immutable audit commit.
+            return publish_metadata_revision(self.index, session_id, **request)
+
+    def _manual_assessment_idle(self) -> None:
+        if self._closed:
+            raise IntegrationBlocked("MANUAL_ASSESSMENT_UNAVAILABLE")
+        if self.webcam is not None:
+            raise IntegrationBlocked("MANUAL_ASSESSMENT_BUSY")
+        try:
+            running = any(job.poll().state == "running" for job in self.jobs.values())
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise IntegrationBlocked("MANUAL_ASSESSMENT_UNAVAILABLE") from error
+        if running:
+            raise IntegrationBlocked("MANUAL_ASSESSMENT_BUSY")
+
+    def manual_assessment_context(self, session_id: str) -> dict:
+        with self.mutex:
+            self._manual_assessment_idle()
+            return manual_assessment_entry.manual_assessment_context(self.index, session_id)
+
+    def publish_manual_assessment_entry(self, session_id: str, request: dict) -> dict:
+        with self.mutex:
+            self._manual_assessment_idle()
+            return manual_assessment_entry.publish_manual_assessment_entry(self.index, session_id, request)
+
+    def report_context(self, session_id: str) -> dict:
+        with self.mutex:
+            try:
+                return current_report_generation_context(self.index, session_id)
+            except ValueError as error:
+                code = str(error).partition(":")[0]
+                if code in {"REPORT_CONTEXT_UNAVAILABLE", "REPORT_INVALID", "REPORT_SOURCE_CHANGED",
+                            "REPORT_INPUT_POLICY_COMPATIBILITY_REQUIRED"}:
+                    reason = code
+                elif code in {"AUDIT_INVALID", "ARTIFACT_MISMATCH", "QUALITY_POLICY", "QUALITY_REJECTED",
+                              "QUALITY_SCHEMA", "QUALITY_UNAVAILABLE", "QUALITY_UNVERIFIED",
+                              "METADATA_UNAVAILABLE", "METADATA_INVALID", "METADATA_SOURCE_CHANGED",
+                              "METADATA_SOURCE_INVALID", "METADATA_SOURCE_TOO_LARGE",
+                              "METADATA_REGISTERED_SESSION_REQUIRED"}:
+                    reason = "REPORT_CONTEXT_UNAVAILABLE"
+                else:
+                    raise
+                return {"schema": "kinelab.report-generation-context.v1", "session_id": session_id,
+                        "status": "UNAVAILABLE", "report_context_sha256": None,
+                        "head": None, "reason": reason}
+
+    def generate_reports(self, session_id: str, *, confirm: bool,
+                         expected_report_head=OMITTED,
+                         expected_report_context_sha256=OMITTED) -> dict:
         if confirm is not True:
             raise IntegrationBlocked("Explicit confirmation required to generate research reports")
         with self.mutex:
-            result = self.report_builder.generate_reports(session_id)
+            result = self.report_builder.generate_reports(
+                session_id, expected_report_head=expected_report_head,
+                expected_report_context_sha256=expected_report_context_sha256)
             self.index.reindex()
             return {
                 "ok": True, "session_id": session_id,
@@ -341,9 +519,70 @@ class IntegratedService:
                 "message": f"Generated truthful PDF, CSV and JSON research reports for {session_id}"
             }
 
+    def create_evidence_export(self, session_id: str, body: dict) -> dict:
+        """One shared audited publisher; no reindex or arbitrary output path."""
+        from evidence_export import publish
+        with self.mutex:
+            return publish(self.index, session_id, body)
+
+    def evidence_export_receipt(self, session_id: str, operation_id: str) -> dict:
+        from evidence_export import read_receipt
+        with self.mutex:
+            return read_receipt(self.index, session_id, operation_id)
+
+    def evidence_export_artifact(self, session_id: str, operation_id: str) -> bytes:
+        from evidence_export import read_receipt
+        with self.mutex:
+            # Return exact verified bytes; HTTP never reopens a checked path.
+            return read_receipt(self.index, session_id, operation_id, artifact=True)
+
+    def _backup_directory(self) -> Path:
+        directory = self.projects_root / "backups"
+        if (directory.is_symlink()
+                or getattr(os.path, "isjunction", lambda _: False)(str(directory))
+                or directory.resolve().parent != self.projects_root):
+            raise IntegrationBlocked("BACKUP_NAME_INVALID: backup directory must not be a link")
+        return directory
+
+    def _backup_schedule_status_locked(self) -> dict:
+        status = self.backup_schedule.status()
+        pump = self.backup_pump
+        # Fixed labels only; no arbitrary exception text, paths, causes or notes.
+        if pump is None:
+            status["pump_status"] = "NOT_ATTACHED"
+        elif pump.health_failure is not None:
+            status["pump_status"] = "HEALTH_UNRECORDED"
+            status["engine_health"] = "REVIEW_REQUIRED"
+        elif pump.failure is not None:
+            status["pump_status"] = "TICK_FAILED"
+            status["engine_health"] = "REVIEW_REQUIRED"
+        else:
+            status["pump_status"] = "ATTACHED"
+        return status
+
+    def backup_schedule_status(self) -> dict:
+        with self.mutex:
+            return self._backup_schedule_status_locked()
+
+    def configure_backup_schedule(self, request: object) -> dict:
+        with self.mutex:
+            self.backup_schedule.configure(request)
+            return self._backup_schedule_status_locked()
+
+    def prune_backups(self) -> None:
+        self.backup_schedule.prune()
+
+    def backup_schedule_tick(self) -> dict:
+        # Pump lock order: service mutex -> scheduler OS lease -> session leases -> index.
+        with self.mutex:
+            if self._closed:
+                raise IntegrationBlocked("BACKUP_SCHEDULE_CLOSED")
+            busy = self.webcam is not None or any(job.poll().state == "running" for job in self.jobs.values())
+            return self.backup_schedule.tick(now=int(time.time()), busy=busy)
+
     def backups(self) -> list[dict]:
         with self.mutex:
-            backup_dir = self.projects_root / "backups"
+            backup_dir = self._backup_directory()
             if not backup_dir.is_dir():
                 return []
             res = []
@@ -351,19 +590,21 @@ class IntegratedService:
                 if f.is_file():
                     try:
                         res.append({**self.backup_mgr.inspect_backup(f), "filename": f.name})
-                    except Exception:
-                        pass
+                    except (BackupCorruptError, OSError) as error:
+                        log_local_failure(logger, logging.WARNING, "local_backup_inspection_failed", error)
             return res
 
     def create_backup(self, *, confirm: bool, session_ids: list[str] | None = None) -> dict:
         if confirm is not True:
             raise IntegrationBlocked("Explicit confirmation required to create backup")
         with self.mutex:
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-            backup_dir = self.projects_root / "backups"
+            if self.webcam is not None or any(job.poll().state == "running" for job in self.jobs.values()):
+                raise IntegrationBlocked("BACKUP_BUSY: finish native capture and processing before backup")
+            from datetime import datetime
+            now = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+            backup_dir = self._backup_directory()
             backup_dir.mkdir(parents=True, exist_ok=True)
-            dest = backup_dir / f"kinelab-backup-{now}.zip"
+            dest = backup_dir / f"kinelab-backup-{now}-{uuid4().hex}.zip"
             manifest = self.backup_mgr.create_backup(dest, session_ids=session_ids)
             return {"ok": True, "backup_file": dest.name, "manifest": manifest,
                     "message": f"Created hash-verified backup {dest.name}"}
@@ -371,12 +612,38 @@ class IntegratedService:
     def restore_backup(self, backup_name: str, *, confirm: bool, overwrite: bool = False) -> dict:
         if confirm is not True:
             raise IntegrationBlocked("Explicit confirmation required to restore backup")
+        if (not isinstance(backup_name, str)
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*\.zip", backup_name, flags=re.IGNORECASE) is None
+                or backup_name.split(".", 1)[0].upper() in {"CON", "PRN", "AUX", "NUL"}):
+            raise IntegrationBlocked("BACKUP_NAME_INVALID: select a listed ZIP file name only")
+        if overwrite is not False:
+            from backup_manager import BackupConflictError
+            raise BackupConflictError("RESTORE_OVERWRITE_UNAVAILABLE: existing sessions cannot be replaced")
         with self.mutex:
-            backup_file = self.projects_root / "backups" / backup_name
-            result = self.backup_mgr.restore_backup(backup_file, overwrite=overwrite)
-            return result
+            directory = self._backup_directory()
+            backup_file = directory / backup_name
+            if backup_file.is_symlink() or backup_file.resolve().parent != directory.resolve():
+                raise IntegrationBlocked("BACKUP_NAME_INVALID: backup must stay inside approved directory")
+            if self.backup_mgr.inspect_backup(backup_file)["schema"] == "kinelab.backup.v2":
+                recoveries = self.projects_root / "recovery-generations"
+                if (recoveries.is_symlink()
+                        or getattr(os.path, "isjunction", lambda _: False)(str(recoveries))
+                        or recoveries.resolve().parent != self.projects_root):
+                    raise IntegrationBlocked("RESTORE_PATH_INVALID: recovery directory must not be a link")
+                recoveries.mkdir(exist_ok=True)
+                destination = recoveries / f"recovered-{uuid4().hex}"
+                result = self.backup_mgr.restore_generation(backup_file, destination)
+                relative = destination.relative_to(self.projects_root).as_posix()
+                return {**result, "recovery_directory": relative,
+                        "message": f"Verified complete recovery in {relative}. Active workspace unchanged."}
+            return self.backup_mgr.restore_backup(backup_file, overwrite=False)
 
     def artifact(self, session_id: str, key: str) -> Path:
+        if self.library.describe_session(session_id)["evidence_status"] == "unverified":
+            raise IntegrationBlocked("EVIDENCE_UNVERIFIED: archived live reports are not approved evidence downloads")
+        self.index.reindex()
+        if self.index.get_passport(session_id)["state"] == "EVIDENCE_INVALID":
+            raise IntegrationBlocked("EVIDENCE_INVALID: changed or missing source evidence")
         files = {entry["key"] for entry in self.reports(session_id)}
         if key not in files:
             raise IntegrationBlocked("Unknown, unavailable or unapproved report artifact")
@@ -384,6 +651,9 @@ class IntegratedService:
         candidate = (project / key).resolve()
         if not candidate.is_relative_to(project) or not candidate.is_file() or candidate.is_symlink():
             raise IntegrationBlocked("Report cannot escape the selected session")
+        if key.endswith(".motion.json"):
+            from export_motion import load_verified_motion
+            load_verified_motion(project, candidate)
         return candidate
 
     def analysis(self) -> dict:
@@ -428,19 +698,10 @@ class IntegratedService:
     def open_native(self, session_id: str, target: str, *, confirm: bool) -> dict:
         if confirm is not True:
             raise IntegrationBlocked("Explicit operator request required to open a native tool")
+        if target == "capture":
+            raise IntegrationBlocked(PARTICIPANT_RECORDING_BLOCKED)
         with self.mutex:
             project = self._project(session_id)
-            pythonw = ROOT / ".venv" / "Scripts" / "pythonw.exe"
-            if target == "capture":
-                if not pythonw.is_file():
-                    raise IntegrationBlocked("Local Python GUI environment missing")
-                process = subprocess.Popen(
-                    [str(pythonw), str(ROOT / "capture_station_gui.py"), "--session-id", session_id],
-                    cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                )
-                return {"opened": True, "target": "capture", "message": "Original Capture Station window opened for this session"}
             if target == "folder":
                 os.startfile(str(project))
                 return {"opened": True, "target": "folder", "message": "Session folder opened"}
@@ -451,13 +712,15 @@ class IntegratedService:
                 os.startfile(str(ROOT / "assets" / "checkerboard_20mm.svg"))
                 return {"opened": True, "target": "board", "message": "Printable checkerboard opened"}
             if target == "sync":
-                if not pythonw.is_file():
+                interpreter = Path(sys.executable)
+                if not interpreter.is_file():
                     raise IntegrationBlocked("Local Python GUI environment missing")
                 # Validate observations can be made before any GUI launches.
                 from sync_evidence import normalized_videos
                 normalized_videos(project)
                 subprocess.Popen(
-                    [str(pythonw), str(ROOT / "launch_sync_review.py"), "--session-id", session_id],
+                    [str(interpreter), str(ROOT / "launch_sync_review.py"), "--session-id", session_id,
+                     "--data-root", str(self.projects_root)],
                     cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -524,227 +787,12 @@ class IntegratedService:
         }
 
     def save_live_session(self, payload: dict) -> dict:
-        if not isinstance(payload, dict):
-            raise IntegrationBlocked("Payload must be a JSON object")
-        exercise_type = payload.get("exercise_type")
-        if not exercise_type or not isinstance(exercise_type, str):
-            raise IntegrationBlocked("exercise_type is required")
+        """Fail closed until measured acquisition, strict contracts and durable ACKs exist.
 
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
-        now_iso = now.isoformat()
-        timestamp_str = now.strftime("%Y%m%d-%H%M%S")
-
-        session_id = payload.get("session_id")
-        if not session_id or not isinstance(session_id, str):
-            clean_ex = re.sub(r"[^A-Za-z0-9_-]", "", exercise_type)
-            session_id = f"live-{timestamp_str}-{clean_ex}"
-
-        from session_library import _check_id
-        session_id = _check_id(session_id)
-
-        with self.mutex:
-            session_folder = self.projects_root / session_id
-            if session_folder.exists():
-                raise IntegrationBlocked(f"Session folder already exists: {session_id}")
-            session_folder.mkdir(parents=True, exist_ok=True)
-            exports_folder = session_folder / "exports"
-            exports_folder.mkdir(parents=True, exist_ok=True)
-
-            reps = payload.get("reps", [])
-            summary = payload.get("summary_metrics", {})
-            total_reps = len(reps) if reps else int(summary.get("totalReps", 0))
-            valid_reps = len([r for r in reps if r.get("valid")]) if reps else int(summary.get("validReps", 0))
-
-            # Config.toml
-            config_toml = f"""[session]
-id = "{session_id}"
-kind = "live"
-exercise = "{exercise_type}"
-created_at_utc = "{now_iso}"
-"""
-            (session_folder / "Config.toml").write_text(config_toml, encoding="utf-8")
-
-            # session.json
-            session_meta = {
-                "schema": "kinelab.live-session.v1",
-                "id": session_id,
-                "kind": "live",
-                "status": "completed",
-                "exercise_type": exercise_type,
-                "patient_id": payload.get("patient_id", "PT-PATIENT-01"),
-                "operator": payload.get("operator", "KineLab Live Tracker"),
-                "created_at_utc": now_iso,
-                "total_reps": total_reps,
-                "valid_reps": valid_reps,
-                "summary": summary,
-            }
-            (session_folder / "session.json").write_text(json.dumps(session_meta, indent=2), encoding="utf-8")
-
-            # live_telemetry.json
-            (session_folder / "live_telemetry.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-            # Generate .motion.json for 3D viewer & report generation
-            frames = payload.get("frames", [])
-            valid_frames = (
-                isinstance(frames, list)
-                and len(frames) > 0
-                and isinstance(frames[0], dict)
-                and "xyz" in frames[0]
-            )
-            if not valid_frames:
-                # Generate synthetic motion trajectory for the completed reps
-                fps = 30.0
-                frames = []
-                frame_count = max(60, total_reps * 60) if total_reps > 0 else 120
-                base_xyz = [
-                    [0.0, 0.9, 0.0],
-                    [-0.08, 0.88, 0.0],
-                    [-0.08, 0.48, 0.0],
-                    [-0.08, 0.12, 0.0],
-                    [-0.08, 0.05, 0.1],
-                    [-0.12, 0.05, 0.1],
-                    [-0.08, 0.08, -0.05],
-                    [0.08, 0.88, 0.0],
-                    [0.08, 0.48, 0.0],
-                    [0.08, 0.12, 0.0],
-                    [0.08, 0.05, 0.1],
-                    [0.12, 0.05, 0.1],
-                    [0.08, 0.08, -0.05],
-                    [0.0, 1.45, 0.0],
-                    [0.0, 1.68, 0.0],
-                    [0.0, 1.55, 0.08],
-                    [-0.18, 1.38, 0.0],
-                    [-0.28, 1.12, 0.0],
-                    [-0.35, 0.88, 0.0],
-                    [0.18, 1.38, 0.0],
-                    [0.28, 1.12, 0.0],
-                    [0.35, 0.88, 0.0],
-                ]
-                if exercise_type == "lunges":
-                    for f_idx in range(frame_count):
-                        t = round(f_idx / fps, 4)
-                        cycle_progress = (f_idx % 60) / 60.0
-                        lunge_depth = (1.0 - math.cos(cycle_progress * 2 * math.pi)) / 2.0 * 0.30
-                        f_xyz = []
-                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
-                            if m_idx in (0, 1, 7, 13, 14, 15, 16, 17, 18, 19, 20, 21):
-                                f_xyz.append([bx, round(by - lunge_depth, 4), bz])
-                            elif m_idx == 2:  # RKnee (lead leg)
-                                f_xyz.append([bx, round(by - lunge_depth * 0.5, 4), round(bz + lunge_depth * 0.35, 4)])
-                            elif m_idx == 8:  # LKnee (trailing leg)
-                                f_xyz.append([bx, round(by - lunge_depth * 0.8, 4), round(bz - lunge_depth * 0.25, 4)])
-                            elif m_idx in (9, 10, 11, 12):  # LFoot (trailing heel lifts)
-                                f_xyz.append([bx, round(by + lunge_depth * 0.08, 4), bz])
-                            else:
-                                f_xyz.append([bx, by, bz])
-                        frames.append({"t": t, "xyz": f_xyz})
-                elif exercise_type == "knee-extension":
-                    for f_idx in range(frame_count):
-                        t = round(f_idx / fps, 4)
-                        cycle_progress = (f_idx % 60) / 60.0
-                        ext = (1.0 - math.cos(cycle_progress * 2 * math.pi)) / 2.0
-                        f_xyz = []
-                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
-                            if m_idx in (0, 1, 7):
-                                f_xyz.append([bx, 0.55, bz])
-                            elif m_idx in (13, 14, 15, 16, 17, 18, 19, 20, 21):
-                                f_xyz.append([bx, round(by - 0.35, 4), bz])
-                            elif m_idx == 2:  # RKnee
-                                f_xyz.append([bx, 0.55, 0.35])
-                            elif m_idx in (3, 4, 5, 6):  # RLeg kicks forward
-                                cur_y = round(0.12 + ext * 0.38, 4)
-                                cur_z = round(ext * 0.35, 4)
-                                f_xyz.append([bx, cur_y, cur_z])
-                            elif m_idx == 8:  # LKnee
-                                f_xyz.append([bx, 0.55, 0.35])
-                            else:
-                                f_xyz.append([bx, by, bz])
-                        frames.append({"t": t, "xyz": f_xyz})
-                elif exercise_type == "balance":
-                    for f_idx in range(frame_count):
-                        t = round(f_idx / fps, 4)
-                        cycle_progress = (f_idx % 60) / 60.0
-                        sway = math.sin(cycle_progress * 4 * math.pi) * 0.015
-                        f_xyz = []
-                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
-                            if m_idx in (8,):  # LKnee lifted
-                                f_xyz.append([bx, round(by + 0.18, 4), round(bz - 0.10, 4)])
-                            elif m_idx in (9, 10, 11, 12):  # LFoot raised off ground
-                                f_xyz.append([bx, round(by + 0.25, 4), round(bz - 0.15, 4)])
-                            elif m_idx in (13, 14, 15):  # Torso sway
-                                f_xyz.append([round(bx + sway, 4), by, bz])
-                            else:
-                                f_xyz.append([bx, by, bz])
-                        frames.append({"t": t, "xyz": f_xyz})
-                else:  # squats default
-                    for f_idx in range(frame_count):
-                        t = round(f_idx / fps, 4)
-                        cycle_progress = (f_idx % 60) / 60.0
-                        squat_depth = (1.0 - math.cos(cycle_progress * 2 * math.pi)) / 2.0 * 0.35
-                        f_xyz = []
-                        for m_idx, (bx, by, bz) in enumerate(base_xyz):
-                            if m_idx in (0, 1, 7, 13, 14, 15, 16, 17, 18, 19, 20, 21):
-                                f_xyz.append([bx, round(by - squat_depth, 4), bz])
-                            elif m_idx in (2, 8):
-                                f_xyz.append([bx, round(by - squat_depth * 0.5, 4), round(bz + squat_depth * 0.4, 4)])
-                            else:
-                                f_xyz.append([bx, by, bz])
-                        frames.append({"t": t, "xyz": f_xyz})
-
-            motion_doc = {
-                "schema": "kinelab.motion.v1",
-                "units": "m",
-                "coordinateSystem": "opensim_y_up",
-                "source": {"trc": f"{session_id}.trc", "mot": None},
-                "fps": float(payload.get("fps", 30.0)),
-                "markers": [
-                    "Hip","RHip","RKnee","RAnkle","RBigToe","RSmallToe","RHeel",
-                    "LHip","LKnee","LAnkle","LBigToe","LSmallToe","LHeel",
-                    "Neck","Head","Nose","RShoulder","RElbow","RWrist",
-                    "LShoulder","LElbow","LWrist"
-                ],
-                "bones": [
-                    [0,1],[1,2],[2,3],[3,6],[3,4],[0,7],[7,8],[8,9],[9,12],[9,10],
-                    [0,13],[13,14],[14,15],[13,16],[16,17],[17,18],[13,19],[19,20],[20,21]
-                ],
-                "frames": frames,
-            }
-            motion_path = exports_folder / f"{session_id}.motion.json"
-            motion_path.write_text(json.dumps(motion_doc, separators=(",", ":")), encoding="utf-8")
-
-            # CSV metrics
-            csv_path = exports_folder / f"{session_id}-metrics.csv"
-            with csv_path.open("w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["rep_number", "duration_ms", "peak_depth_deg", "target_depth_deg", "min_symmetry_pct", "valid", "faults"])
-                for r in reps:
-                    writer.writerow([
-                        r.get("repNumber", ""),
-                        r.get("durationMs", ""),
-                        r.get("peakDepth", ""),
-                        r.get("targetDepth", ""),
-                        r.get("minSymmetry", ""),
-                        r.get("valid", True),
-                        ";".join(r.get("faults", [])),
-                    ])
-
-            # Reindex in SQLite
-            self.index.reindex()
-            self.index.record_audit_event(session_id, "LIVE_SET_RECORDED", {
-                "exercise_type": exercise_type,
-                "total_reps": total_reps,
-                "valid_reps": valid_reps,
-            })
-
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "total_reps": total_reps,
-                "valid_reps": valid_reps,
-                "average_depth": summary.get("averageDepth", 0),
-                "report_url": f"/api/v1/sessions/{session_id}/reports",
-                "motion_url": f"/api/v1/sessions/{session_id}/motion",
-                "message": f"Recorded live {exercise_type} set ({total_reps} reps) into KineLab PT sessions.",
-            }
-
+        No client-provided source, validity flag, landmarks or summary can override
+        this containment gate. Previous implementation silently synthesized frames.
+        """
+        raise IntegrationBlocked(
+            "LIVE_ACQUISITION_UNVERIFIED: saving live measurements is disabled "
+            "until camera inference and durable source provenance are independently verified"
+        )

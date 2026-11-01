@@ -8,15 +8,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import secrets
 import socket
 import subprocess
 import sys
 import time
-from urllib.request import Request, urlopen
 import webbrowser
+from pathlib import Path
+from urllib.request import Request, urlopen
 
 ROOT=Path(__file__).resolve().parent
 DIST=ROOT/"viewer"/"dist"
@@ -122,7 +122,7 @@ def ensure_running()->dict:
         return previous
     port=find_free_port()
     key=secrets.token_urlsafe(36)
-    proc=start_server(port,key)
+    start_server(port,key)
     state={"port":port,"key":key}
     write_state(STATE,state)
     return state
@@ -148,6 +148,13 @@ def open_window(state:dict)->str:
 
 
 def main():
+    from runtime_config import retired_entrypoint
+    return retired_entrypoint("launch_kinelab_unified.py",
+        "It started unified_service.py with the obsolete /api routes, #key URL and X-KineLab-Key header, "
+        "legacy %LOCALAPPDATA%\\KineLabPT state and the in-installation projects directory.")
+
+
+def legacy_main():
     p=argparse.ArgumentParser(description="Open unified KineLab PT desktop workspace")
     p.add_argument("--no-window",action="store_true")
     p.add_argument("--smoke",action="store_true")
@@ -163,10 +170,10 @@ def main():
         if not args.no_window:open_window(state)
         else:print(f"KINELAB_UNIFIED_READY=http://127.0.0.1:{state['port']}/")
         return 0
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - retired CLI boundary: any failure is logged, surfaced, returned as exit 1
         STATE_DIR.mkdir(parents=True,exist_ok=True)
         with LOG.open("ab") as f:
-            f.write(f"Launcher error: {type(exc).__name__}: {exc}\n".encode("utf-8"))
+            f.write(f"Launcher error: {type(exc).__name__}: {exc}\n".encode())
         if not args.no_window and sys.platform=="win32":
             from ctypes import windll
             windll.user32.MessageBoxW(None,f"{exc}\n\nSee local KineLab logs for details.",

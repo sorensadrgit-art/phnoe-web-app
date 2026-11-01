@@ -1,9 +1,8 @@
-import importlib.util
 import json
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,9 +16,8 @@ class AtomicExportTests(unittest.TestCase):
             out = Path(folder) / "motion.json"
             def interrupted(data, stream, **kwargs):
                 stream.write('{"partial":'); raise OSError("disk write failed")
-            with patch.object(export_motion.json, "dump", side_effect=interrupted):
-                with self.assertRaises(OSError):
-                    export_motion.write_motion(out, {"frames": []})
+            with patch.object(export_motion.json, "dump", side_effect=interrupted), self.assertRaises(OSError):
+                export_motion.write_motion(out, {"frames": []})
             self.assertFalse(out.exists())
             self.assertEqual(list(Path(folder).iterdir()), [])
             export_motion.write_motion(out, {"frames": []})

@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+
+const UNAVAILABLE = 'UNAVAILABLE';
 
 export default function LiveSetSummaryModal({
   summary,
@@ -7,34 +9,126 @@ export default function LiveSetSummaryModal({
   onExportJSON,
   onClose,
   onStartNewSet,
+  onStopActivity,
+  activityStopped = false,
   isSaving = false,
   saveResult = null,
 }) {
-  const [patientId, setPatientId] = useState('PT-PATIENT-01');
+  const [patientId, setPatientId] = useState('');
+  const trimmedPatientId = patientId.trim();
+  const dialogRef = useRef(null);
+  const titleId = useId();
+  const hasSummary = Boolean(summary);
+  useEffect(() => {
+    if (!hasSummary) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement;
+    dialog.showModal();
+    (dialog.querySelector('[data-dialog-close]') || dialog).focus();
+    return () => {
+      if (dialog.open) dialog.close();
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [hasSummary]);
+
+  const handleDialogKeyDown = event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose?.();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const dialog = dialogRef.current;
+    const focusable = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+      .filter(element => !element.hidden);
+    const first = focusable[0], last = focusable.at(-1);
+    if (!first) { event.preventDefault(); dialog.focus(); return; }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+      event.preventDefault(); first.focus();
+    }
+  };
 
   if (!summary) return null;
 
   const {
     exerciseType = 'Squat',
-    totalReps = 0,
-    validReps = 0,
-    averageDepth = 0,
-    bestDepth = 0,
-    targetDepth = 80,
-    averageSymmetry = 100,
-    durationSeconds = 0,
-    faultsLog = [],
+    totalReps,
+    validReps,
+    averageDepth,
+    bestDepth,
+    targetDepth,
+    averageSymmetry,
+    durationSeconds,
+    faultsLog,
   } = summary;
 
-  const validPct = totalReps > 0 ? Math.round((validReps / totalReps) * 100) : 0;
-  const minutes = Math.floor(durationSeconds / 60);
-  const seconds = durationSeconds % 60;
-  const timeFormatted = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+  const isCount = (v) => Number.isInteger(v) && v >= 0;
+  const repCount = isCount(totalReps) ? totalReps : null;
+  const hasReps = repCount !== null && repCount > 0;
+  const cleanCount = hasReps && isCount(validReps) && validReps <= repCount ? validReps : null;
+  // Fault history counts as evidence only when every entry is well-formed and consistent with the rep total; malformed entries must not be silently filtered into a no-fault claim.
+  const faults = (() => {
+    if (!Array.isArray(faultsLog)) return null;
+    for (const f of faultsLog) {
+      if (!f || typeof f.fault !== 'string' || !f.fault || !isCount(f.count) ||
+          (repCount !== null && f.count > repCount) ||
+          (f.percentage !== undefined && (!isNumber(f.percentage) || f.percentage < 0 || f.percentage > 100))) return null;
+    }
+    return faultsLog;
+  })();
+  const typeLabel = typeof exerciseType === 'string' && exerciseType ? exerciseType : 'Squat';
+  // Balance reps store hold duration in seconds as peakDepth; targetROM is the hold target in seconds.
+  const isBalance = exerciseType === 'balance';
+  const unit = isBalance ? ' s' : '°';
+  const withUnit = (v) => (isNumber(v) && v >= 0 ? `${v}${unit}` : UNAVAILABLE);
+  // Tracker contract: knee-flexion depth is image-plane geometry bounded to 0-180 degrees; balance peakDepth is hold seconds and cannot exceed elapsed test time (durationSeconds is elapsed rounded to whole seconds, so allow 0.5 s rounding slack).
+  const depthInRange = (v) => {
+    if (!isNumber(v) || v < 0) return false;
+    if (isBalance) return !(isNumber(durationSeconds) && durationSeconds >= 0) || v <= durationSeconds + 0.5;
+    return v <= 180;
+  };
+  const repMetric = (v) => (hasReps && depthInRange(v) ? `${v}${unit}` : UNAVAILABLE);
+  const symmetry = hasReps && isNumber(averageSymmetry) && averageSymmetry >= 0 && averageSymmetry <= 100 ? averageSymmetry : null;
+  // Only the bilateral squat tracker evaluates knee-angle asymmetry, and a rating is only defensible when repetitions and fault history were actually assessed.
+  const symmetryRated = symmetry !== null && exerciseType === 'squats' && cleanCount !== null && faults !== null;
+
+  const cleanText = cleanCount !== null
+    ? `${cleanCount} clean (${Math.round((cleanCount / repCount) * 100)}%)`
+    : repCount === 0 ? 'No completed reps' : 'Clean count UNAVAILABLE';
+  let timeFormatted = UNAVAILABLE;
+  if (isNumber(durationSeconds) && durationSeconds >= 0) {
+    const total = Math.floor(durationSeconds);
+    const seconds = total % 60;
+    timeFormatted = `${Math.floor(total / 60)}:${seconds < 10 ? '0' : ''}${seconds}`;
+  }
+  const symmetryText = symmetry === null
+    ? UNAVAILABLE
+    : `${symmetry}% ${symmetryRated ? (symmetry >= 85 ? '(Balanced)' : '(Mild Asymmetry)') : (exerciseType === 'squats' ? '(rating UNAVAILABLE: repetitions not fully assessed)' : '(not assessed for this exercise)')}`;
+  const symmetryColor = !symmetryRated ? '#94a3b8' : symmetry >= 80 ? '#10b981' : '#f59e0b';
+  let formMessage = null;
+  if (faults && faults.length === 0) {
+    if (!hasReps) formMessage = 'Form assessment UNAVAILABLE: no completed repetitions.';
+    else if (cleanCount === repCount) formMessage = `No synthetic test faults flagged in ${repCount} completed rep${repCount > 1 ? 's' : ''}. This is not a clinical form assessment.`;
+    else formMessage = 'Form assessment UNAVAILABLE: repetitions were not assessed.';
+  } else if (!faults) formMessage = 'Form assessment UNAVAILABLE: fault history missing or malformed.';
+  const formAssessed = formMessage !== null && formMessage.startsWith('No synthetic');
 
   return (
-    <div className="uw-modal-backdrop" style={{
+    <dialog ref={dialogRef} className="uw-modal-backdrop" aria-modal={true} aria-labelledby={titleId} tabIndex={-1}
+      onKeyDown={handleDialogKeyDown} onCancel={event => { event.preventDefault(); onClose?.(); }} style={{
       position: 'fixed',
       inset: 0,
+      width: '100%',
+      height: '100%',
+      maxWidth: 'none',
+      maxHeight: 'none',
+      margin: 0,
+      border: 0,
+      boxSizing: 'border-box',
       backgroundColor: 'rgba(5, 10, 24, 0.82)',
       backdropFilter: 'blur(8px)',
       display: 'flex',
@@ -49,6 +143,9 @@ export default function LiveSetSummaryModal({
         borderRadius: 12,
         width: '100%',
         maxWidth: 620,
+        maxHeight: '100%',
+        display: 'flex',
+        flexDirection: 'column',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
         overflow: 'hidden',
         color: '#f8fafc',
@@ -56,6 +153,7 @@ export default function LiveSetSummaryModal({
         {/* Header */}
         <div style={{
           padding: '20px 24px 16px',
+          flexShrink: 0,
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -63,13 +161,15 @@ export default function LiveSetSummaryModal({
         }}>
           <div>
             <div style={{ color: '#00f3ff', fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-              SET COMPLETED · TELEMETRY SUMMARY
+              SYNTHETIC TEST SUMMARY · NOT MEASURED
             </div>
-            <h2 style={{ margin: '4px 0 0', fontSize: '1.4rem', fontWeight: 700 }}>
-              {exerciseType.toUpperCase()} PERFORMANCE
+            <h2 id={titleId} style={{ margin: '4px 0 0', fontSize: '1.4rem', fontWeight: 700 }}>
+              {`${typeLabel.toUpperCase()} PERFORMANCE`}
             </h2>
           </div>
           <button
+            type="button"
+            data-dialog-close
             onClick={onClose}
             style={{
               background: 'transparent',
@@ -86,36 +186,39 @@ export default function LiveSetSummaryModal({
         </div>
 
         {/* Content Body */}
-        <div style={{ padding: '20px 24px', maxHeight: '70vh', overflowY: 'auto' }}>
+        <div role="region" aria-label="Summary details" tabIndex={0} style={{ padding: '20px 24px', minHeight: 0, flex: '1 1 auto', overflowY: 'auto' }}>
+          {onStopActivity&&<button type="button" onClick={onStopActivity}>Stop activity</button>}
+          {activityStopped&&<p role="status">Activity stopped. Follow the owner-approved protocol; clinical next-step approval is PENDING. Recording saved/pending status is shown separately.</p>}
+          {summary.frames_omitted > 0 && <p role="status">Preview export contains the latest 600 illustrative frames; {summary.frames_omitted} earlier frames omitted. Use the synthetic recorder for a durable raw test recording.</p>}
           {/* Key Metrics Grid */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
             gap: 12,
             marginBottom: 20,
           }}>
             <div style={{ background: '#131e36', padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', textTransform: 'uppercase' }}>Total Reps</span>
-              <strong style={{ fontSize: '1.6rem', color: '#ffffff', fontWeight: 800 }}>{totalReps}</strong>
-              <small style={{ fontSize: '0.75rem', color: '#10b981', display: 'block' }}>{validReps} clean ({validPct}%)</small>
+              <strong style={{ fontSize: '1.6rem', color: '#ffffff', fontWeight: 800 }}>{repCount === null ? UNAVAILABLE : repCount}</strong>
+              <small style={{ fontSize: '0.75rem', color: cleanCount === null ? '#94a3b8' : '#10b981', display: 'block' }}>{cleanText}</small>
             </div>
 
             <div style={{ background: '#131e36', padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', textTransform: 'uppercase' }}>Average Depth</span>
-              <strong style={{ fontSize: '1.6rem', color: '#38bdf8', fontWeight: 800 }}>{averageDepth}°</strong>
-              <small style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Target: {targetDepth}°</small>
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', textTransform: 'uppercase' }}>{isBalance ? 'Average Hold' : 'Average Depth'}</span>
+              <strong style={{ fontSize: '1.6rem', color: '#38bdf8', fontWeight: 800 }}>{repMetric(averageDepth)}</strong>
+              <small style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>{`Target: ${withUnit(targetDepth)}`}</small>
             </div>
 
             <div style={{ background: '#131e36', padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', textTransform: 'uppercase' }}>Best Depth</span>
-              <strong style={{ fontSize: '1.6rem', color: '#10b981', fontWeight: 800 }}>{bestDepth}°</strong>
-              <small style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Peak flexion</small>
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', textTransform: 'uppercase' }}>{isBalance ? 'Longest Hold' : 'Best Depth'}</span>
+              <strong style={{ fontSize: '1.6rem', color: '#10b981', fontWeight: 800 }}>{repMetric(bestDepth)}</strong>
+              <small style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>{isBalance ? 'Raised-ankle hold time' : exerciseType === 'knee-extension' ? 'Peak extension excursion' : 'Peak flexion'}</small>
             </div>
 
             <div style={{ background: '#131e36', padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
               <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', textTransform: 'uppercase' }}>Set Time</span>
               <strong style={{ fontSize: '1.6rem', color: '#f8fafc', fontWeight: 800 }}>{timeFormatted}</strong>
-              <small style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Active tracking</small>
+              <small style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Elapsed test time</small>
             </div>
           </div>
 
@@ -123,33 +226,35 @@ export default function LiveSetSummaryModal({
           <div style={{ background: '#131e36', padding: '14px 16px', borderRadius: 8, marginBottom: 20, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.85rem' }}>
               <span style={{ fontWeight: 600 }}>Bilateral Movement Symmetry</span>
-              <span style={{ color: averageSymmetry >= 80 ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
-                {averageSymmetry}% {averageSymmetry >= 85 ? '(Balanced)' : '(Mild Asymmetry)'}
+              <span style={{ color: symmetryColor, fontWeight: 700 }}>
+                {symmetryText}
               </span>
             </div>
-            <div style={{ width: '100%', height: 8, background: '#1e293b', borderRadius: 4, overflow: 'hidden' }}>
+            {symmetry !== null && <div style={{ height: 8, background: '#1e293b', borderRadius: 4, overflow: 'hidden' }}>
               <div style={{
-                width: `${averageSymmetry}%`,
+                width: `${symmetry}%`,
                 height: '100%',
-                background: averageSymmetry >= 80 ? 'linear-gradient(90deg, #0284c7, #10b981)' : '#f59e0b',
+                background: symmetryRated && symmetry < 80 ? '#f59e0b' : 'linear-gradient(90deg, #0284c7, #10b981)',
                 borderRadius: 4,
                 transition: 'width 0.4s ease',
               }} />
-            </div>
+            </div>}
           </div>
 
           {/* Form Fault Log */}
           <div style={{ marginBottom: 20 }}>
             <h4 style={{ margin: '0 0 10px', fontSize: '0.9rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Form Fault Diagnostics ({faultsLog.length})
+              {`Form Fault Diagnostics (${faults ? faults.length : UNAVAILABLE})`}
             </h4>
-            {faultsLog.length === 0 ? (
-              <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: 12, borderRadius: 6, color: '#34d399', fontSize: '0.9rem' }}>
-                ✓ Clean form! No compensations or kinematic faults detected.
+            {formMessage !== null ? (
+              <div style={formAssessed
+                ? { background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: 12, borderRadius: 6, color: '#34d399', fontSize: '0.9rem' }
+                : { background: '#131e36', border: '1px solid rgba(148, 163, 184, 0.3)', padding: 12, borderRadius: 6, color: '#94a3b8', fontSize: '0.9rem' }}>
+                {formMessage}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {faultsLog.map(({ fault, count, percentage }) => (
+                {faults.map(({ fault, count, percentage }) => (
                   <div key={fault} style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -160,10 +265,10 @@ export default function LiveSetSummaryModal({
                     border: '1px solid rgba(239, 68, 68, 0.2)',
                   }}>
                     <span style={{ color: '#f87171', fontWeight: 600, fontSize: '0.85rem' }}>
-                      ⚠ {fault.replace('_', ' ')}
+                      {`⚠ ${fault.replace(/_/g, ' ')}`}
                     </span>
                     <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                      {count} rep{count > 1 ? 's' : ''} ({percentage}%)
+                      {isCount(count) ? `${count} rep${count === 1 ? '' : 's'}` : UNAVAILABLE} {isNumber(percentage) ? `(${percentage}%)` : `(${UNAVAILABLE})`}
                     </span>
                   </div>
                 ))}
@@ -172,7 +277,7 @@ export default function LiveSetSummaryModal({
           </div>
 
           {/* Local-only patient/subject record field */}
-          {!demoMode && <div style={{ background: '#131e36', padding: '14px 16px', borderRadius: 8, border: '1px solid rgba(0, 243, 255, 0.15)' }}>
+          {!demoMode && onSaveToSessions && <div style={{ background: '#131e36', padding: '14px 16px', borderRadius: 8, border: '1px solid rgba(0, 243, 255, 0.15)' }}>
             <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: 6 }}>
               PATIENT / SUBJECT RECORD ID
             </label>
@@ -180,7 +285,7 @@ export default function LiveSetSummaryModal({
               type="text"
               value={patientId}
               onChange={(e) => setPatientId(e.target.value)}
-              placeholder="e.g. PT-PATIENT-01"
+              placeholder="e.g. Enter subject/record ID"
               style={{
                 width: '100%',
                 padding: '8px 12px',
@@ -194,8 +299,8 @@ export default function LiveSetSummaryModal({
             />
           </div>}
 
-          {demoMode && <p role="note" style={{color:'#facc8e',fontSize:12,lineHeight:1.6}}>
-            Synthetic example only. These metrics do not describe measured human movement or clinical performance. Nothing has been saved to a server.
+          {(!onSaveToSessions || demoMode) && <p role="status" style={{color:'#facc8e',fontSize:12,lineHeight:1.6}}>
+            SYNTHETIC TEST ONLY. These metrics are generated animation, not measured human movement. Server saving and clinical reporting are unavailable.
           </p>}
 
           {saveResult && (
@@ -216,6 +321,7 @@ export default function LiveSetSummaryModal({
         {/* Footer Actions */}
         <div style={{
           padding: '16px 24px',
+          flexShrink: 0,
           background: '#090e1c',
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
           display: 'flex',
@@ -243,6 +349,7 @@ export default function LiveSetSummaryModal({
             <button
               type="button"
               onClick={onStartNewSet}
+              disabled={activityStopped}
               style={{
                 background: '#1e293b',
                 border: '1px solid #334155',
@@ -257,19 +364,19 @@ export default function LiveSetSummaryModal({
               Start New Set
             </button>
 
-            {!demoMode && <button
+            {!demoMode && onSaveToSessions && <button
               type="button"
-              onClick={() => onSaveToSessions(patientId)}
-              disabled={isSaving}
+              onClick={() => { if (trimmedPatientId) onSaveToSessions(trimmedPatientId); }}
+              disabled={isSaving || !trimmedPatientId}
               style={{
-                background: isSaving ? '#64748b' : 'linear-gradient(135deg, #0284c7 0%, #00f3ff 100%)',
+                background: (isSaving || !trimmedPatientId) ? '#64748b' : 'linear-gradient(135deg, #0284c7 0%, #00f3ff 100%)',
                 border: 'none',
                 color: '#0a0f1d',
                 padding: '8px 20px',
                 borderRadius: 6,
                 fontSize: '0.85rem',
                 fontWeight: 800,
-                cursor: isSaving ? 'wait' : 'pointer',
+                cursor: isSaving ? 'wait' : (!trimmedPatientId ? 'not-allowed' : 'pointer'),
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
@@ -280,6 +387,6 @@ export default function LiveSetSummaryModal({
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

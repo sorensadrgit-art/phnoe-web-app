@@ -1,7 +1,8 @@
 """Create a high-contrast, multi-resolution KineLab PT Windows shortcut icon."""
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter
 import math
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFilter
 
 BASE = Path(__file__).resolve().parent
 SIZE = 1024
@@ -11,6 +12,8 @@ OUT.mkdir(exist_ok=True)
 # Carefully scaled dark, rounded app tile with a subtle deep-cyan highlight.
 tile = Image.new("RGBA", (SIZE, SIZE))
 px = tile.load()
+if px is None:
+    raise RuntimeError("Pillow returned no pixel access for the new icon tile")
 for y in range(SIZE):
     for x in range(SIZE):
         illumination = max(0.0, 1 - math.hypot((x - 270) / 850, (y - 190) / 870))

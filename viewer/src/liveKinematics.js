@@ -1,14 +1,13 @@
 /**
  * KineLab PT - Live Biomechanical Kinematics Engine
- * Pure mathematical calculations for real-time clinical pose biofeedback.
+ * Pure geometry. Image-plane projections do not establish anatomical accuracy.
  * Zero external dependencies, robust against missing or degenerate landmarks.
  */
 
-const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 
 /**
- * Safe point extraction with default 0 for z.
+ * Missing depth remains null.
  * Accepts {x, y, z?} or [x, y, z?].
  */
 export function normalizePoint(p) {
@@ -17,12 +16,14 @@ export function normalizePoint(p) {
     if (typeof p[0] !== 'number' || typeof p[1] !== 'number' || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) {
       return null;
     }
-    return { x: p[0], y: p[1], z: Number.isFinite(p[2]) ? p[2] : 0 };
+    if (p[2] != null && !Number.isFinite(p[2])) return null;
+    return { x: p[0], y: p[1], z: p[2] ?? null };
   }
   if (typeof p.x !== 'number' || typeof p.y !== 'number' || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
     return null;
   }
-  return { x: p.x, y: p.y, z: Number.isFinite(p.z) ? p.z : 0 };
+  if (p.z != null && !Number.isFinite(p.z)) return null;
+  return { x: p.x, y: p.y, z: p.z ?? null };
 }
 
 /**
@@ -35,7 +36,7 @@ export function midpoint(p1, p2) {
   return {
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,
-    z: (a.z + b.z) / 2,
+    z: a.z !== null && b.z !== null ? (a.z + b.z) / 2 : null,
   };
 }
 
@@ -58,7 +59,7 @@ export function calculateAngle2D(a, b, c) {
   const magBA = Math.hypot(vBAx, vBAy);
   const magBC = Math.hypot(vBCx, vBCy);
 
-  if (magBA < 1e-9 || magBC < 1e-9) return 0;
+  if (magBA < 1e-9 || magBC < 1e-9) return null;
 
   const dot = vBAx * vBCx + vBAy * vBCy;
   const cosTheta = Math.max(-1, Math.min(1, dot / (magBA * magBC)));
@@ -72,7 +73,7 @@ export function calculateAngle3D(a, b, c) {
   const pA = normalizePoint(a);
   const pB = normalizePoint(b);
   const pC = normalizePoint(c);
-  if (!pA || !pB || !pC) return null;
+  if (!pA || !pB || !pC || [pA.z,pB.z,pC.z].some(v=>v===null)) return null;
 
   const vBAx = pA.x - pB.x;
   const vBAy = pA.y - pB.y;
@@ -85,7 +86,7 @@ export function calculateAngle3D(a, b, c) {
   const magBA = Math.sqrt(vBAx * vBAx + vBAy * vBAy + vBAz * vBAz);
   const magBC = Math.sqrt(vBCx * vBCx + vBCy * vBCy + vBCz * vBCz);
 
-  if (magBA < 1e-9 || magBC < 1e-9) return 0;
+  if (magBA < 1e-9 || magBC < 1e-9) return null;
 
   const dot = vBAx * vBCx + vBAy * vBCy + vBAz * vBCz;
   const cosTheta = Math.max(-1, Math.min(1, dot / (magBA * magBC)));
@@ -130,9 +131,7 @@ export function calculateHipAngle(shoulder, hip, knee, use3D = false) {
  * Calculate trunk lean (in degrees) relative to vertical.
  * Coordinate convention: Y increases downwards in screen space (typical webcam/canvas).
  * Upright spine: shoulderMid is directly above hipMid (dx = 0, dy < 0, dz = 0).
- * Supports both 2D and 3D coordinates. When Z is present (e.g. MediaPipe pose),
- * sagittal forward tilt is accurately captured in 3D.
- * Range: [0, 90] degrees.
+ * 3D inputs must share a coordinate basis and units. Image-plane callers omit Z.
  */
 export function calculateTrunkLean(shoulderMid, hipMid) {
   const s = normalizePoint(shoulderMid);
@@ -141,9 +140,9 @@ export function calculateTrunkLean(shoulderMid, hipMid) {
 
   const dx = s.x - h.x;
   const dy = s.y - h.y;
-  const dz = s.z - h.z;
+  const dz = s.z !== null && h.z !== null ? s.z - h.z : 0;
   const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  if (length < 1e-9) return 0;
+  if (length < 1e-9) return null;
 
   // Inverted Y: vector from hip up to shoulder is (dx, -dy, dz)
   const upwardY = -dy;
@@ -174,7 +173,7 @@ export function calculateKneeValgus(hip, knee, ankle, side = 'left', midlineX = 
 
   // Expected knee X on straight line between hip and ankle at knee's Y position
   const totalY = a.y - h.y;
-  if (Math.abs(totalY) < 1e-6) return 0;
+  if (Math.abs(totalY) < 1e-6) return null;
 
   const ratio = (k.y - h.y) / totalY;
   const expectedKneeX = h.x + ratio * (a.x - h.x);
@@ -182,7 +181,7 @@ export function calculateKneeValgus(hip, knee, ankle, side = 'left', midlineX = 
 
   // Thigh length for angular conversion
   const thighLen = Math.hypot(k.x - h.x, k.y - h.y);
-  if (thighLen < 1e-6) return 0;
+  if (thighLen < 1e-6) return null;
 
   // Angle of deviation: approx arcsin(deviationX / thighLen)
   const angleDeg = Math.asin(Math.max(-1, Math.min(1, Math.abs(deviationX) / thighLen))) * RAD2DEG;
@@ -229,13 +228,19 @@ export function calculateBilateralSymmetry(leftMetric, rightMetric) {
  * Compute full instantaneous kinematics frame from a standard 33-pose or 22-marker landmark set.
  * Supports MediaPipe landmark indexing or named marker dict.
  */
-export function computePoseKinematics(landmarks) {
+export function computePoseKinematics(landmarks, image = null) {
   if (!landmarks) return null;
+  if (image && (![image.width,image.height].every(v=>Number.isFinite(v)&&v>0))) return null;
 
   // Support both array of landmarks and named keypoint objects
   const get = (idx, name) => {
-    if (Array.isArray(landmarks)) return landmarks[idx] || null;
-    return landmarks[name] || null;
+    const point = Array.isArray(landmarks) ? landmarks[idx] : landmarks[name];
+    const p = normalizePoint(point);
+    if (!p) return null;
+    if (!image) return p;
+    if (!Number.isFinite(point.visibility) || point.visibility < (image.minConfidence ?? .6) || point.visibility > 1 ||
+        p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return null;
+    return {x:p.x*image.width,y:p.y*image.height,z:null};
   };
 
   // MediaPipe Pose landmarks standard indices:
@@ -261,9 +266,11 @@ export function computePoseKinematics(landmarks) {
   const rightHipAngle = calculateHipAngle(rShoulder, rHip, rKnee);
   const trunkLean = calculateTrunkLean(shoulderMid, hipMid);
   const midlineX = hipMid ? hipMid.x : null;
-  const leftValgus = calculateKneeValgus(lHip, lKnee, lAnkle, 'left', midlineX);
-  const rightValgus = calculateKneeValgus(rHip, rKnee, rAnkle, 'right', midlineX);
+  const leftValgus = image ? null : calculateKneeValgus(lHip, lKnee, lAnkle, 'left', midlineX);
+  const rightValgus = image ? null : calculateKneeValgus(rHip, rKnee, rAnkle, 'right', midlineX);
   const kneeSymmetry = calculateBilateralSymmetry(leftKneeFlexion, rightKneeFlexion);
+  const legHeight = hipMid && lAnkle && rAnkle ? Math.abs((lAnkle.y+rAnkle.y)/2-hipMid.y) : null;
+  const ankleHeightDifference = legHeight > 1e-6 ? Math.abs(lAnkle.y-rAnkle.y)/legHeight : null;
 
   return {
     leftKneeFlexion,
@@ -274,6 +281,7 @@ export function computePoseKinematics(landmarks) {
     leftValgus,
     rightValgus,
     kneeSymmetry,
+    ankleHeightDifference,
     shoulderMid,
     hipMid,
   };

@@ -1,0 +1,58 @@
+name: Isolated local quality checks
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: isolated-quality-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  authorize:
+    # Reject an unauthorized dispatch before any code reaches a self-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require the explicitly configured trusted operator
+        env:
+          ALLOWED_ACTOR: ${{ vars.KINELAB_QUALITY_ALLOWED_ACTOR }}
+        run: test -n "$ALLOWED_ACTOR" && test "$GITHUB_ACTOR" = "$ALLOWED_ACTOR"
+  quality:
+    # A repository administrator must explicitly name the trusted operator and
+    # provision this dedicated runner. Never label a live clinical workstation.
+    if: github.event_name == 'workflow_dispatch' && vars.KINELAB_QUALITY_ALLOWED_ACTOR != '' && github.actor == vars.KINELAB_QUALITY_ALLOWED_ACTOR
+    needs: authorize
+    runs-on: [self-hosted, Windows, X64, kinelab-isolated-quality]
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      KINELAB_QUALITY_PYTHON: ${{ vars.KINELAB_QUALITY_PYTHON }}
+      KINELAB_QUALITY_TOOLS_PYTHON: ${{ vars.KINELAB_QUALITY_TOOLS_PYTHON }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # Preserve the preprovisioned ignored viewer/node_modules directory.
+          clean: false
+      - name: Require preprovisioned isolated runtime
+        shell: pwsh
+        run: |
+          if (-not $env:KINELAB_QUALITY_PYTHON -or -not (Test-Path -LiteralPath $env:KINELAB_QUALITY_PYTHON -PathType Leaf)) {
+            throw 'BLOCKED: configure an isolated preprovisioned Python 3.10-3.13 environment with OpenSim/Pose2Sim. No installation is performed.'
+          }
+          if (-not $env:KINELAB_QUALITY_TOOLS_PYTHON -or -not (Test-Path -LiteralPath $env:KINELAB_QUALITY_TOOLS_PYTHON -PathType Leaf)) {
+            throw 'BLOCKED: configure a separate preprovisioned developer-tools Python with ruff, mypy and pip-audit. No installation is performed.'
+          }
+          if (-not (Test-Path -LiteralPath 'viewer/node_modules' -PathType Container)) {
+            throw 'BLOCKED: provision the locked viewer dependencies on this isolated runner. No installation is performed.'
+          }
+      - name: Execute explicit quality gate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'dist/quality' | Out-Null
+          $run = $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT
+          $checks = @('python-runtime','python-syntax','python-dependencies','python-tests','node-runtime','node-dependencies','node-tests','cloud-build','desktop-build','lint','typecheck','typecheck-harness','security-advisories','npm-advisories','workflow-syntax')
+          # A run of this manually dispatched workflow is the only evidence of remote CI; this file is not.
+          & $env:KINELAB_QUALITY_PYTHON -X utf8 -B tools/check_quality.py --run --checks @checks --python $env:KINELAB_QUALITY_PYTHON --tools-python $env:KINELAB_QUALITY_TOOLS_PYTHON --receipts-dir "dist/quality/receipts-$run" --out "dist/quality/$run.json"
+          exit $LASTEXITCODE
+

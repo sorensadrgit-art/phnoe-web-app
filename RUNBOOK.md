@@ -1,37 +1,46 @@
-# KineLab local capture runbook
+# KineLab PT candidate runbook
 
-This is the functional local workflow. The existing demo is usable now. A real phone/webcam run still needs six original recordings and independent synchronization observations. No real capture accuracy has been established.
+This file belongs to the isolated engineering candidate. It does not authorize participant recording, access to existing study data, changes to the original installation, or clinical use. Physical measurement accuracy and clinical validation remain unverified.
 
-The application remains at `C:\Users\soren\Documents\Projects\KineLab-PT-DualCam`. The verified source backup and implementation evidence are under `C:\Users\soren\Projects\kinelab-team`. There is no Git repository or invented commit history. `requirements.lock.txt` inventories the existing Windows environment; clean-machine installation from that file has not been tested.
+The source candidate is a Git checkout; an extracted candidate package may contain no Git metadata. Use the source revision, dirty-state record and file hashes in the matching evidence, rather than assuming a clean or accepted release. `requirements.lock.txt` is an environment inventory, not a verified installer. The package does not provision Python, scientific dependencies, model weights, FFmpeg or Blender; offline operation and clean-machine installation remain unverified.
 
-## Open the viewer
+## Supported candidate launch
 
-Use the existing desktop launcher, or run:
+Configure the three placeholders below before use. The application directory must be the isolated candidate directory containing `t6_launcher.py`; the Python executable must belong to a separately verified environment. Select a new dedicated data directory outside the application directory. Do not substitute an earlier installation or its data. This command is documented here; it was not executed to update this runbook.
 
 ```powershell
-$kinelabRoot = 'C:\Users\soren\Documents\Projects\KineLab-PT-DualCam'
-$kinelabPython = Join-Path $kinelabRoot '.venv\Scripts\python.exe'
-& $kinelabPython -B (Join-Path $kinelabRoot 'launch_motion_lab.py')
+$kinelabRoot = '<absolute candidate application directory>'
+$kinelabPython = '<absolute path to separately verified Python executable>'
+$kinelabDataRoot = '<new dedicated candidate data directory>'
+& $kinelabPython -B (Join-Path $kinelabRoot 't6_launcher.py') --data-root $kinelabDataRoot
 ```
 
-The launcher serves only `127.0.0.1`. The initial motion is explicitly a demo, with no joint-angle data. **Load local motion JSON** selects a file on this machine without uploading it. Invalid files show an error and clear stale data. Valid v1 files are labeled unbound legacy data; v2 files include session identity. Play/pause and keyboard scrubbing use actual source times. Reduced-motion mode starts paused.
+`t6_launcher.py` is the supported desktop entry point, with `/api/v1`, a per-launch Bearer token and loopback-only serving. `--no-browser` suppresses browser opening; `--detached` / `--no-wait` selects detached launch. Legacy launcher entry points are retired. The packaged `Start-KineLabPT.bat` locates a separately provisioned Python executable; it does not validate or install that runtime. Candidate shortcut installation is a separate action and must not replace an original shortcut.
 
-**T4 review:** The viewer now includes left/right estimated joint-angle plots (with ROM over actual available samples) and a separate synchronized video panel. For **genuine real v2 motion only**, select all five local evidence files using the independent file controls: the exact `run.json`, `normalization.json`, `sync.json`, and normalized `videos/cam01.mp4` and `videos/cam02.mp4` from the SAME session. The application verifies the exact run-manifest SHA-256 against the motion export, matching session/configuration/input identities, passed native sync stages, observed source-frame pairs and drift, and the byte-for-byte SHA-256 of each MP4 before showing paired video previews. No local file is uploaded.
+Keep camera preview, synthetic motion and physically measured evidence separate. Current participant acquisition and unverified live persistence remain blocked. A synthetic demonstration, a source-input match or package SHA-256 verification does not establish reproduced builds, native runtime behavior, physical accuracy or clinical validity. Retain `BLOCKED_ON_PHYSICAL_EVIDENCE` and `CLINICAL_VALIDATION: UNVERIFIED`; use `SOFTWARE_BUILD_VERIFIED` only for the specific evidence that proves it.
+
+## Historical technical reference — not execution authorization
+
+The remaining sections preserve the earlier capture and motion-review protocol for source review. They describe intended mechanisms and engineering targets, not a fresh acceptance result for this candidate. Commands and session names are examples for separately approved disposable fixtures. Do not collect participant recordings, open existing study sessions, run native processing or infer current UI availability from this reference. A future physical protocol needs separate authorization, validated runtime prerequisites and independent evidence.
+
+The earlier motion viewer used a local-file control without upload. Invalid files were expected to clear stale data; v1 motion was labeled unbound legacy data and v2 motion carried session identity. Playback and keyboard scrubbing used source times, with reduced motion starting paused. Verify those behaviors against the actual selected viewer and its evidence before relying on them.
+
+**Historical T4 review contract:** Left/right estimated joint-angle plots (with ROM over actual available samples) and synchronized video required **genuine real v2 motion**. The five evidence files were the exact `run.json`, `normalization.json`, `sync.json`, and normalized `videos/cam01.mp4` and `videos/cam02.mp4` from the SAME session. The required checks were the exact run-manifest SHA-256 against the motion export, matching session/configuration/input identities, passed native sync stages, observed source-frame pairs and drift, and byte-for-byte MP4 hashes before paired previews. This description does not attest that the current candidate or package has passed those checks.
 
 The common skeleton timeline drives browser seek targets using recorded signed camera offsets and normalized frame timestamps. **Browser-decoded video seek accuracy is not certified**, especially during active playback; pause and inspect a frame manually. Missing coverage remains visibly unavailable. The chart does not invent joint angles for marker-only sessions. No clinical validity or physical accuracy is implied by the software evidence check.
 
 ## 1. Prepare one recording session
 
-An empty `projects/capture-20261026-trial01` was prepared during software checks. To create another session, choose a new directory:
+For a separately authorized disposable fixture, choose a new session directory under the explicit candidate data root. The name below is an example, not an existing session to discover:
 
 ```powershell
 Set-Location -LiteralPath $kinelabRoot
-& $kinelabPython -B setup_project.py --project projects\capture-new-trial --session-id capture-new-trial
+& $kinelabPython -B setup_project.py --project (Join-Path $kinelabDataRoot 'capture-new-fixture') --session-id capture-new-fixture
 ```
 
 Existing destinations are refused. `session-template.json` is an incomplete template, not a valid session. Use one smartphone and one webcam. Keep placement and lens/zoom settings fixed between calibration and the trial; use consistent orientation/resolution for each camera. Measure the printed board: 8×10 squares with 7×9 inner corners and 20 mm square sides. Do not assume printer scaling is correct.
 
-Record these six clips and copy originals into the chosen session's `raw` folder using exactly these names:
+A separately approved future physical protocol would require these six original clips in the chosen session's `raw` folder. This list does not authorize recording:
 
 - `cam01_intrinsics.mp4`: phone views of the board at multiple useful image positions.
 - `cam02_intrinsics.mp4`: webcam intrinsic views.
@@ -42,10 +51,10 @@ The current native calibration path uses the first extrinsic frame. Do not pass 
 
 ## 2. Register and normalize
 
-For the prepared session:
+For the separately authorized fixture example:
 
 ```powershell
-$kinelabTrial = Join-Path $kinelabRoot 'projects\capture-20261026-trial01'
+$kinelabTrial = Join-Path $kinelabDataRoot 'capture-new-fixture'
 & $kinelabPython -B setup_project.py --project $kinelabTrial --register-captures
 & $kinelabPython -B normalize_capture.py --project $kinelabTrial
 ```
@@ -116,15 +125,17 @@ TRC/MOT must belong to the same run with matching temporal coverage. Angular and
 Blender and Three.js independently consume the motion JSON. Blender uses actual timestamps and rational FPS/FPS-base; GLB is Y-up. It refuses existing output files:
 
 ```powershell
-$kinelabBlender = Join-Path $kinelabRoot 'tools\blender-4.5.15-windows-x64\blender.exe'
+$kinelabBlender = '<absolute path to separately provisioned Blender executable>'
 & $kinelabBlender -b --python-exit-code 1 --python (Join-Path $kinelabRoot 'blender_import.py') -- (Join-Path $kinelabTrial 'exports\capture.motion.json') (Join-Path $kinelabTrial 'exports\capture.blend') (Join-Path $kinelabTrial 'exports\capture.glb')
 ```
 
-## Verification and limits
+## Verification examples and limits
+
+The following commands apply to a source checkout that contains the tests and viewer source. Those files are not promised in an extracted package. Run checks only within their separately authorized scope and record the actual interpreter, commands, results, skips and hashes.
 
 ```powershell
 & $kinelabPython -B -m unittest discover -s tests -v
 node --test viewer\src\motionData.test.js
 ```
 
-The tests use synthetic inputs, existing demo data, real FFmpeg encoding/decoding, and the installed Blender executable. Those establish software behavior, not physical measurement accuracy. A real end-to-end acceptance run and offline repeat remain pending the actual six recordings, measured board and independent cues. Model-cache/network availability for a fresh full Pose2Sim run is not yet verified. No VPS operation, paid integration, market/release work or clinical validation is part of this implementation.
+Tests may require separately provisioned scientific modules, FFmpeg or Blender; missing prerequisites and skipped cases remain explicit gaps. This runbook claims no new test, launch, clean-machine or offline-runtime result. Physical acceptance still needs separately authorized recordings, a measured board and independent cues. Model/runtime provisioning and a fresh offline Pose2Sim run remain unverified. No participant, clinical, infrastructure, deployment or release authorization is granted by these examples.

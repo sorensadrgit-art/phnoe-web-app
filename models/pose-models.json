@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "rtmlib-coco17-cpu-v1",
+  "runtime": {
+    "rtmlib": "0.0.16",
+    "onnxruntime": "1.31.0",
+    "opencv-python": "5.0.0.93"
+  },
+  "source_license": "MMPose Apache-2.0; model training data and redistribution rights require separate release review",
+  "source_repository": "https://github.com/open-mmlab/mmpose",
+  "models": [
+    {
+      "filename": "detector.onnx",
+      "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_tiny_8xb8-300e_humanart-6f3252f9.zip",
+      "archive_sha256": "36e09ca555916253fa1b5d51bec01e48e98e1f0af966c51ce3e844d8c8fc4cfc",
+      "archive_bytes": 18887737,
+      "member": "20230928/yolox_onnx/yolox_tiny_8xb8-300e_humanart-6f3252f9/end2end.onnx",
+      "sha256": "ceb11c07298f95c50d7c5abeb906d03340c85f23aa79e3e66966e7fb6c307250",
+      "bytes": 20283006
+    },
+    {
+      "filename": "pose.onnx",
+      "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip",
+      "archive_sha256": "7673922e531014906ca4f0f239b7e233b740146a10b632deaa2a28d45470d802",
+      "archive_bytes": 20496303,
+      "member": "20230831/rtmpose_onnx/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504/end2end.onnx",
+      "sha256": "9aeb635b83f86aea45cf45d85798f7eba1a162de8e0d721c44e54fe5eebaf47d",
+      "bytes": 21890172
+    }
+  ]
+}

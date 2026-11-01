@@ -6,17 +6,17 @@ re-check its full recorded inventory and all measured quality gates.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import re
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import psutil
 
 from session_library import SessionLibrary
-
+from take_acceptance import TakeAcceptanceError, checked_path, inspect_acceptance
 
 LOCK_FORMATS = {
     "run.lock": re.compile(r"([1-9][0-9]{0,11})\Z"),
@@ -92,6 +92,9 @@ def inspect_recovery(project: Path) -> dict:
     except (OSError, psutil.Error) as error:
         raise RecoveryBlocked("Unable to inspect related processing processes") from error
     locks = {name: _inspect_lock(project / name, related) for name in LOCK_FORMATS}
+    acceptance = inspect_acceptance(project)
+    if acceptance["state"] != "clear":
+        locks["takes/accept.lock"] = acceptance
     record_path = project / "run.json"
     statuses = []
     if record_path.is_file():
@@ -101,7 +104,7 @@ def inspect_recovery(project: Path) -> dict:
                 raise ValueError("Unexpected native run schema")
             stages = record.get("stages")
             if not isinstance(stages, list):
-                raise ValueError("No list of stages")
+                raise TypeError("No list of stages")
             statuses = [s for s in stages if isinstance(s, dict) and s.get("status") in ("running", "failed")]
             native = "incomplete" if statuses else "recorded-stages-not-revalidated"
         except (OSError, ValueError, KeyError, TypeError):
@@ -119,6 +122,24 @@ def inspect_recovery(project: Path) -> dict:
             "If old outputs conflict, preserve them and create a clean session."
         ),
     }
+
+
+def recover_take_acceptance(project: Path, transaction_id: str, *, confirmed: bool) -> dict:
+    """Direct operator action; never infer permission, stale ownership or validity."""
+    if confirmed is not True:
+        raise RecoveryBlocked("TAKE_RECOVERY_CONFIRMATION_REQUIRED: explicitly confirm this exact transaction")
+    try:
+        project = _session(checked_path(project))
+        return SessionLibrary(project.parent)._recover_take_acceptance(project.name, transaction_id)
+    except (OSError, ValueError) as error:
+        if isinstance(error, TakeAcceptanceError):
+            reason = str(error)
+            if reason.startswith("TAKE_BUSY:"):
+                reason = reason.replace("TAKE_BUSY:", "TAKE_RECOVERY_BUSY:", 1)
+            elif reason.startswith(("TAKE_INPUT_CHANGED:", "TAKE_TRANSACTION_CHANGED:")):
+                reason = "TAKE_RECOVERY_CHANGED: " + reason.partition(":")[2].strip()
+            raise RecoveryBlocked(reason) from error
+        raise RecoveryBlocked("TAKE_RECOVERY_UNKNOWN: session or transaction evidence is unavailable") from error
 
 
 def archive_orphaned_lock(project: Path, lock_name: str, *, confirmed: bool) -> Path:
@@ -146,7 +167,7 @@ def archive_orphaned_lock(project: Path, lock_name: str, *, confirmed: bool) -> 
     recovery.mkdir(parents=True, exist_ok=True)
     if recovery.is_symlink() or not recovery.resolve().is_relative_to(project):
         raise RecoveryBlocked("Recovery archive escaped the session")
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     dest = recovery / f"{lock_name}.{timestamp}.{uuid4().hex}.archived"
     if dest.exists():
         raise RecoveryBlocked("Recovery archive destination already exists")

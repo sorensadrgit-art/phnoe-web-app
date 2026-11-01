@@ -1,12 +1,15 @@
 """T6 integrated local service must delegate to already tested KineLab guards."""
 from __future__ import annotations
+
+import os
 import tempfile
-from pathlib import Path
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from backup_manager import BackupConflictError
 from t6_service import IntegratedService, IntegrationBlocked
-from session_contract import ROLES
 
 
 class T6ServiceTests(unittest.TestCase):
@@ -95,13 +98,12 @@ class T6ServiceTests(unittest.TestCase):
         with self.assertRaises((IntegrationBlocked,ValueError)):
             self.service.record_webcam("demo-a","cam02_board",seconds=10,confirm=True)
 
-    def test_only_allow_explicit_native_capture_open_request(self):
+    def test_native_capture_stays_blocked_even_with_explicit_request(self):
         self.service.create_session("cam-a")
         with patch("t6_service.subprocess.Popen") as popen:
-            self.service.open_native("cam-a","capture",confirm=True)
-            argv=popen.call_args.args[0]
-            self.assertIn("capture_station_gui.py", " ".join(argv))
-            self.assertIn("cam-a", argv)
+            with self.assertRaisesRegex(IntegrationBlocked, "PARTICIPANT_RECORDING_BLOCKED"):
+                self.service.open_native("cam-a","capture",confirm=True)
+            popen.assert_not_called()
         with self.assertRaises((IntegrationBlocked,ValueError)):
             self.service.open_native("cam-a","unknown",confirm=True)
 
@@ -113,7 +115,8 @@ class T6ServiceTests(unittest.TestCase):
         self.assertEqual(p1["state"], "EMPTY")
         self.assertEqual(len(p1["missing_roles"]), 6)
         comp = self.service.compare("pass-1", "pass-2")
-        self.assertTrue(comp["compatible"])
+        self.assertFalse(comp["compatible"])
+        self.assertIn("Insufficient verified reconstruction evidence", comp["reason"])
 
     def test_generate_reports_and_artifacts(self):
         self.service.create_session("rep-gen")
@@ -133,9 +136,22 @@ class T6ServiceTests(unittest.TestCase):
         bk_file = b_res["backup_file"]
         backups = self.service.backups()
         self.assertTrue(any(b["filename"] == bk_file for b in backups))
-        # Restore with overwrite
-        r_res = self.service.restore_backup(bk_file, confirm=True, overwrite=True)
+        original = self.service._project("bk-sess")
+        before = (original / "Config.toml").read_bytes()
+        with self.assertRaisesRegex(BackupConflictError, "RESTORE_OVERWRITE_UNAVAILABLE"):
+            self.service.restore_backup(bk_file, confirm=True, overwrite=True)
+        self.assertEqual((original / "Config.toml").read_bytes(), before)
+        # Complete v2 recovery is isolated; it must not merge or replace the active index.
+        active_db = self.service.index.db_path.read_bytes()
+        r_res = self.service.restore_backup(bk_file, confirm=True, overwrite=False)
         self.assertTrue(r_res["ok"])
+        self.assertTrue(r_res["database_restored"])
+        self.assertFalse(r_res["active_workspace_changed"])
+        recovered = self.service.projects_root / r_res["recovery_directory"]
+        self.assertTrue((recovered / ".kinelab_index.db").is_file())
+        self.assertEqual((recovered / "bk-sess/Config.toml").read_bytes(), before)
+        self.assertEqual(self.service.index.db_path.read_bytes(), active_db)
+        self.assertEqual((original / "Config.toml").read_bytes(), before)
 
     def test_session_metadata_never_exposes_user_windows_filesystem_paths(self):
         self.service.create_session("private-pilot")
@@ -146,6 +162,38 @@ class T6ServiceTests(unittest.TestCase):
         self.assertNotIn("path",detail)
         self.assertNotIn(str(self.root),str(listing))
         self.assertNotIn(str(self.root),str(detail))
+
+    def test_backup_waits_for_native_capture_and_processing(self):
+        self.service.create_session("backup-busy")
+        self.service.webcam = {"session": "backup-busy"}
+        with self.assertRaisesRegex(IntegrationBlocked, "BACKUP_BUSY"):
+            self.service.create_backup(confirm=True)
+        self.service.webcam = None
+        self.service.jobs["backup-busy"] = SimpleNamespace(poll=lambda: SimpleNamespace(state="running"))
+        with self.assertRaisesRegex(IntegrationBlocked, "BACKUP_BUSY"):
+            self.service.create_backup(confirm=True)
+        self.assertFalse((self.service.projects_root / "backups").exists())
+
+    def test_backup_requests_in_same_second_create_distinct_preserved_archives(self):
+        self.service.create_session("backup-unique")
+        with patch("datetime.datetime") as clock:
+            clock.now.return_value.strftime.return_value = "20261028-120000"
+            first = self.service.create_backup(confirm=True)["backup_file"]
+            original = (self.service.projects_root / "backups" / first).read_bytes()
+            second = self.service.create_backup(confirm=True)["backup_file"]
+        self.assertNotEqual(first, second)
+        self.assertEqual((self.service.projects_root / "backups" / first).read_bytes(), original)
+
+    def test_backup_listing_and_creation_refuse_linked_storage(self):
+        external = self.root / "external-backups"; external.mkdir()
+        try:
+            os.symlink(external, self.service.projects_root / "backups", target_is_directory=True)
+        except OSError as error:
+            self.skipTest("Directory symlinks unavailable: " + str(error))
+        for operation in (self.service.backups, lambda: self.service.create_backup(confirm=True)):
+            with self.subTest(operation=operation), self.assertRaisesRegex(IntegrationBlocked, "BACKUP_NAME_INVALID"):
+                operation()
+        self.assertEqual(list(external.iterdir()), [])
 
     def test_recovery_status_never_exposes_private_project_windows_path(self):
         self.service.create_session("recovery-privacy")

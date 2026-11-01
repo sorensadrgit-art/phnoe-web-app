@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useRef,useState} from 'react';
+import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {Canvas,useFrame,useThree} from '@react-three/fiber';
 import {Grid,OrbitControls} from '@react-three/drei';
 import * as THREE from 'three';
@@ -61,51 +61,63 @@ function CameraPresetHandler({preset,controlsRef}){
  return null;
 }
 
-function useMotion(token){
- const [data,setData]=useState(null),[error,setError]=useState(''),[source,setSource]=useState('demo');
+function useMotion(token,sessionId){
+ const [data,setData]=useState(null),[error,setError]=useState(''),[source,setSource]=useState(sessionId?'session: '+sessionId:'demo');
  const generation=useRef(0);
- useEffect(()=>{
-  const abort=new AbortController(),request=generation.current;
-  fetch('/motion/demo.motion.json',{signal:abort.signal}).then(r=>{if(!r.ok)throw new Error('Missing demo.motion.json: '+r.status);return r.json()}).then(d=>{
-   if(request===generation.current)setData(validateMotion(d));
-  }).catch(e=>{if(e.name!=='AbortError'&&request===generation.current)setError(String(e.message||e))});
-  return ()=>abort.abort();
- },[]);
+ const pending=useRef(null);
  const loadFile=async file=>{
   if(!file)return;
   const request=++generation.current;
+  pending.current?.abort();
   setData(null);setError('');setSource('local file');
   try{
    const loaded=validateMotion(JSON.parse(await file.text()));
    if(request===generation.current)setData(loaded);
   }catch(e){if(request===generation.current)setError(String(e.message||e));}
  };
- const loadSession=async sid=>{
+ const loadSession=useCallback(async sid=>{
   if(!sid)return;
   const request=++generation.current;
+  pending.current?.abort();
+  const controller=new AbortController();pending.current=controller;
   setData(null);setError('');setSource('session: '+sid);
   try{
    const headers=token?{Authorization:'Bearer '+token}:{};
-   const res=await fetch('/api/v1/sessions/'+encodeURIComponent(sid)+'/motion',{headers});
+   const res=await fetch('/api/v1/sessions/'+encodeURIComponent(sid)+'/motion',{headers,signal:controller.signal});
    if(!res.ok){
     const body=await res.json().catch(()=>({}));
     throw new Error(body.error||`HTTP ${res.status}`);
    }
    const loaded=validateMotion(await res.json());
+   if(loaded.sessionId!==sid)throw Error('Motion identity does not match the selected session');
    if(request===generation.current)setData(loaded);
   }catch(e){
-   if(request===generation.current)setError(`Cannot load motion for ${sid}: ${e.message}`);
+   if(e.name!=='AbortError'&&request===generation.current)setError(`Cannot load motion for ${sid}: ${e.message}`);
   }
- };
+ },[token]);
+ useEffect(()=>{
+  if(sessionId){
+   loadSession(sessionId);
+  }else{
+   const controller=new AbortController(),request=++generation.current;
+   pending.current=controller;setData(null);setError('');setSource('demo');
+   fetch('/motion/demo.motion.json',{signal:controller.signal}).then(r=>{if(!r.ok)throw Error('Demo unavailable: '+r.status);return r.json()}).then(d=>{
+    if(request===generation.current)setData(validateMotion(d));
+   }).catch(e=>{if(e.name!=='AbortError'&&request===generation.current)setError(String(e.message||e))});
+  }
+  return ()=>{generation.current++;pending.current?.abort()};
+ },[sessionId,loadSession]);
  return {data,error,source,loadFile,loadSession};
 }
 
 export default function MotionApp({sessionId='',token=''}){
- const {data,error,source,loadFile,loadSession}=useMotion(token);
+ const {data,error,source,loadFile,loadSession}=useMotion(token,sessionId);
  const [playing,setPlaying]=useState(()=>!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
  const [seconds,setSeconds]=useState(null);
  const [speed,setSpeed]=useState(1.0);
  const [preset,setPreset]=useState('iso');
+ const [rejectedOpen,setRejectedOpen]=useState(false);
+ const [rejectedSeconds,setRejectedSeconds]=useState(0);
  const controlsRef=useRef();
 
  useEffect(()=>{setSeconds(data?.frames[0].t??null);},[data]);
@@ -126,7 +138,7 @@ export default function MotionApp({sessionId='',token=''}){
 
  const f=data?frameAtTime(data,seconds??data.frames[0].t):null;
  const kin=data?.kinematics;
- const label=source==='demo'?'DEMO':data?.schema==='kinelab.motion.v2'?data.kind.toUpperCase():source.toUpperCase();
+ const label=!data?'UNAVAILABLE':source==='demo'?'DEMO':data.schema==='kinelab.motion.v2'?data.kind.toUpperCase():source.toUpperCase();
  const angle=key=>{
   const value=angleDegrees(kin,key,f?.t);
   return Number.isFinite(value)?value.toFixed(1)+'°':'—';
@@ -190,6 +202,13 @@ export default function MotionApp({sessionId='',token=''}){
   {data&&<AngleChart motion={data} seconds={seconds??data.frames[0].t}
     onScrub={time=>{setPlaying(false);setSeconds(time)}}/>}
   {data&&<VerifiedReview motion={data} seconds={seconds??data.frames[0].t}
-    playing={playing}/>}
+    playing={playing} onSeek={time=>{setPlaying(false);setSeconds(time)}}/>}
+  <div className="review-entry">
+   <button type="button" aria-expanded={rejectedOpen} onClick={()=>{setRejectedOpen(open=>!open);setRejectedSeconds(0)}}>
+    {rejectedOpen?'Close rejected run review':'Open rejected run review (not usable for measurement)'}
+   </button>
+  </div>
+  {rejectedOpen&&<VerifiedReview key={'rejected:'+sessionId} mode="rejected" sessionId={sessionId} seconds={rejectedSeconds}
+    playing={false} onSeek={setRejectedSeconds}/>}
  </main>;
 }

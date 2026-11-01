@@ -1,12 +1,11 @@
 """Tests for local backup creation, manifest verification, and staged restore."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
-from backup_manager import BackupManager, BackupCorruptError, BackupConflictError
+from backup_manager import BackupConflictError, BackupCorruptError, BackupManager
 from session_index import SessionIndex
 from session_library import SessionLibrary
 
@@ -34,7 +33,7 @@ class BackupManagerTests(unittest.TestCase):
         zip_dest = self.root / "backups" / "sess-backup-1.kinelab.zip"
         manifest = self.mgr.create_backup(zip_dest, session_ids=["sess-backup-1"])
         self.assertTrue(zip_dest.is_file())
-        self.assertEqual(manifest["schema"], "kinelab.backup.v1")
+        self.assertEqual(manifest["schema"], "kinelab.backup.v2")
         self.assertIn("sess-backup-1", manifest["sessions"])
 
         inspection = self.mgr.inspect_backup(zip_dest)
@@ -69,9 +68,9 @@ class BackupManagerTests(unittest.TestCase):
         restore_mgr = BackupManager(restore_target, res_idx)
         try:
             with self.assertRaises(BackupCorruptError):
-                restore_mgr.restore_backup(tampered_zip)
+                restore_mgr.restore_generation(tampered_zip, self.root / "new-generation")
             # Verify no corrupt session was published into target
-            self.assertFalse((restore_target / "sess-corrupt").exists())
+            self.assertFalse((self.root / "new-generation").exists())
         finally:
             res_idx.close()
 
@@ -85,13 +84,122 @@ class BackupManagerTests(unittest.TestCase):
 
         # Attempt to restore into same projects directory without overwrite -> Conflict
         with self.assertRaises(BackupConflictError):
-            self.mgr.restore_backup(zip_dest, overwrite=False)
+            self.mgr.restore_generation(zip_dest, self.projects)
 
-        # Restoring with overwrite=True succeeds and preserves integrity
-        result = self.mgr.restore_backup(zip_dest, overwrite=True)
+        # Approved M1 containment: overwrite is unavailable and bytes are untouched.
+        before = (s_folder / "file.txt").read_bytes()
+        with self.assertRaisesRegex(BackupConflictError, "RESTORE_OVERWRITE_UNAVAILABLE"):
+            self.mgr.restore_backup(zip_dest, overwrite=True)
+        self.assertEqual((s_folder / "file.txt").read_bytes(), before)
+
+V1_SESSION_FILES = {"Config.toml": b"# legacy v1 config\n", "notes.txt": b"legacy bytes"}
+
+
+def build_v1_archive(zip_path: Path, sessions: dict[str, dict[str, bytes]]) -> dict:
+    """Build a genuine kinelab.backup.v1 archive in the layout the pre-v2 creator wrote."""
+    import hashlib
+    import json
+    import zipfile
+    files = []
+    members = []
+    for sid, contents in sessions.items():
+        for name, data in contents.items():
+            relative = f"sessions/{sid}/{name}"
+            files.append({"path": relative, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
+            members.append((relative, data))
+    manifest = {
+        "schema": "kinelab.backup.v1",
+        "created_at_utc": "2025-01-01T00:00:00+00:00",
+        "host": "legacy-host",
+        "sessions": sorted(sessions),
+        "database_included": False,
+        "file_count": len(files),
+        "files": files,
+    }
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("backup_manifest.json", json.dumps(manifest, indent=2))
+        for relative, data in members:
+            archive.writestr(relative, data)
+    return manifest
+
+
+class LegacyV1BackupTests(unittest.TestCase):
+    """Regression coverage for reading archives written by the kinelab.backup.v1 creator."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.projects = self.root / "projects"
+        self.projects.mkdir()
+        self.index = SessionIndex(self.root / "index.db", self.projects)
+        self.library = SessionLibrary(self.projects)
+        self.mgr = BackupManager(self.projects, self.index)
+
+    def tearDown(self):
+        self.index.close()
+        self.tmp.cleanup()
+
+    def _v1_zip(self, name: str = "legacy.zip") -> Path:
+        zip_path = self.root / name
+        build_v1_archive(zip_path, {"v1sess": dict(V1_SESSION_FILES)})
+        return zip_path
+
+    def test_v1_inspect_and_import_into_fresh_root(self):
+        zip_path = self._v1_zip()
+        inspection = self.mgr.inspect_backup(zip_path)
+        self.assertEqual(inspection["schema"], "kinelab.backup.v1")
+        self.assertEqual(inspection["recovery_scope"], "legacy_session_import")
+        self.assertEqual(inspection["sessions"], ["v1sess"])
+        self.assertEqual(inspection["file_count"], 2)
+        self.assertFalse(inspection["database_included"])
+
+        result = self.mgr.restore_backup(zip_path)
         self.assertTrue(result["ok"])
-        self.assertIn("sess-conflict", result["restored_sessions"])
+        self.assertEqual(result["restored_sessions"], ["v1sess"])
+        self.assertFalse(result["database_restored"])
+        restored = self.projects / "v1sess"
+        self.assertEqual((restored / "Config.toml").read_bytes(), V1_SESSION_FILES["Config.toml"])
+        self.assertEqual((restored / "notes.txt").read_bytes(), b"legacy bytes")
 
+    def test_v1_import_preserves_unrelated_existing_sessions(self):
+        existing = self.library.create_session("existing-sess", kind="real")
+        (existing / "data.txt").write_text("keep me", encoding="utf-8")
+        self.index.reindex()
+
+        result = self.mgr.restore_backup(self._v1_zip())
+        self.assertTrue(result["ok"])
+        self.assertEqual((existing / "data.txt").read_text(encoding="utf-8"), "keep me")
+        self.assertTrue((self.projects / "v1sess" / "Config.toml").is_file())
+
+    def test_v1_conflicting_session_is_never_overwritten(self):
+        conflict = self.library.create_session("v1sess", kind="real")
+        before = (conflict / "Config.toml").read_bytes()
+
+        with self.assertRaises(BackupConflictError):
+            self.mgr.restore_backup(self._v1_zip())
+        self.assertEqual((conflict / "Config.toml").read_bytes(), before)
+        self.assertFalse((conflict / "notes.txt").exists())
+
+    def test_v1_restore_generation_refused_explicitly(self):
+        with self.assertRaisesRegex(BackupCorruptError, "legacy archive has no complete recovery generation"):
+            self.mgr.restore_generation(self._v1_zip(), self.root / "new-generation")
+        self.assertFalse((self.root / "new-generation").exists())
+
+    def test_tampered_v1_member_fails_hash_verification(self):
+        import zipfile
+        zip_path = self._v1_zip()
+        with zipfile.ZipFile(zip_path) as source:
+            manifest_bytes = source.read("backup_manifest.json")
+            config_bytes = source.read("sessions/v1sess/Config.toml")
+        tampered = self.root / "tampered-v1.zip"
+        with zipfile.ZipFile(tampered, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("backup_manifest.json", manifest_bytes)
+            archive.writestr("sessions/v1sess/Config.toml", config_bytes)
+            archive.writestr("sessions/v1sess/notes.txt", b"tampered bytes!!")
+
+        with self.assertRaises(BackupCorruptError):
+            self.mgr.restore_backup(tampered)
+        self.assertFalse((self.projects / "v1sess").exists())
 
 if __name__ == "__main__":
     unittest.main()

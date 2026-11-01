@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import http.client
 import json
-from pathlib import Path
 import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 from t6_server import make_server
 from t6_service import IntegratedService
@@ -59,6 +59,98 @@ class LocalServerTests(unittest.TestCase):
     def auth(self):
         return {"Authorization":"Bearer "+"a"*50,
                 "Origin":f"http://127.0.0.1:{self.port}"}
+
+    def test_confirmed_camera_and_native_capture_remain_blocked(self):
+        from unittest.mock import patch
+        self.svc.create_session('capture-blocked')
+        with patch('t6_service.subprocess.Popen') as process:
+            for action, data in [('capture', {'role': 'cam02_trial', 'seconds': 12}),
+                                 ('open', {'target': 'capture'})]:
+                code, body, _ = self.request('POST', '/api/v1/sessions/capture-blocked/' + action,
+                    {**data, 'confirm': True}, self.auth())
+                self.assertEqual(code, 409, body)
+                self.assertIn(b'PARTICIPANT_RECORDING_BLOCKED', body)
+            process.assert_not_called()
+
+    def test_ephemeral_pose_endpoint_obeys_auth_bounds_and_does_not_save(self):
+        from unittest.mock import patch
+
+        from test_pose_inference import request
+        endpoint = '/api/v1/inference/frame'
+        payload = request()
+        self.assertEqual(self.request('POST', endpoint, payload)[0], 401)
+        self.assertEqual(self.request('POST', endpoint, payload, {**self.auth(), 'Origin': 'https://example.invalid'})[0], 403)
+        self.assertEqual(self.request('POST', endpoint, {**payload, 'extra': 'x'*70000}, self.auth())[0], 413)
+        with patch('pose_inference.PoseInference._load', side_effect=FileNotFoundError):
+            code, body, _ = self.request('POST', endpoint, payload, self.auth())
+        self.assertEqual(code, 200, body)
+        self.assertEqual(json.loads(body)['reason'], 'MODELS_UNAVAILABLE')
+        self.assertEqual(self.svc.sessions(), [])
+        self.assertEqual(self.request('POST', endpoint, {}, self.auth())[0], 409)
+
+    def test_incremental_synthetic_recording_exceeds_bulk_limit_without_larger_requests(self):
+        from recording_contract import canonical_json, digest
+        from test_recording_contract import frame, header
+        from test_recording_store import chunk
+        data = header(); endpoint = "/api/v1/recordings"
+        status, body, _ = self.request("POST", endpoint, data, self.auth())
+        self.assertEqual(status, 201, body)
+        sid = data["session_id"]; total = 0
+        for start in range(1, 129, 16):
+            frames = [frame(i, (i - 1) * 30) for i in range(start, start + 16)]
+            payload = chunk(start); payload.update(frames_json=canonical_json(frames), sha256=digest(frames))
+            length = len(json.dumps(payload).encode()); total += length
+            self.assertLess(length, 64 * 1024)
+            status, body, _ = self.request("POST", endpoint + "/" + sid + "/chunks", payload, self.auth())
+            self.assertEqual(status, 200, body)
+            self.assertEqual(json.loads(body)["saved_through"], start + 15)
+        self.assertGreater(total, 64 * 1024)
+        status, body, _ = self.request("POST", endpoint + "/" + sid + "/finalize",
+            {"operation_id": data["operation_id"], "last_sequence": 128}, self.auth())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["manifest"]["frame_count"], 128)
+        status, body, _ = self.request("GET", endpoint + "/" + sid, headers=self.auth())
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["state"], "FINALIZED")
+        self.assertFalse((self.root / "projects" / sid).exists())
+        status, body, _ = self.request("GET", endpoint, headers=self.auth())
+        self.assertEqual(json.loads(body)["recordings"][0]["source_kind"], "synthetic")
+
+    def test_recording_api_retains_auth_source_and_identity_boundaries(self):
+        from test_recording_contract import header
+        for method in ("GET", "POST"):
+            status, _, _ = self.request(method, "/api/v1/recordings", header() if method == "POST" else None)
+            self.assertEqual(status, 401)
+        data = header(); data["source"]["kind"] = "camera"
+        status, body, _ = self.request("POST", "/api/v1/recordings", data, self.auth())
+        self.assertEqual(status, 409, body)
+        self.assertEqual(self.svc.index.conn.execute("SELECT COUNT(*) FROM recordings").fetchone()[0], 0)
+        self.request("POST", "/api/v1/recordings", header(), self.auth())
+        status, body, _ = self.request("POST", "/api/v1/sessions", {"id": header()["session_id"]}, self.auth())
+        self.assertEqual(status, 409, body)
+        self.assertFalse((self.root / "projects" / header()["session_id"]).exists())
+
+    def test_recording_storage_failure_returns_no_saved_ack(self):
+        import sqlite3
+        from unittest.mock import patch
+
+        from test_recording_contract import header
+        with patch.object(self.svc.index, "_append_audit", side_effect=sqlite3.OperationalError("disk full")):
+            status, body, _ = self.request("POST", "/api/v1/recordings", header(), self.auth())
+        self.assertEqual(status, 503, body)
+        self.assertNotIn("saved_through", json.loads(body))
+        self.assertEqual(self.svc.index.conn.execute("SELECT COUNT(*) FROM recordings").fetchone()[0], 0)
+
+    def test_ambiguous_or_nonfinite_json_rejected_before_creating_session(self):
+        for payload in (b'{"id":"strict-a","id":"strict-b"}',
+                        b'{"id":"strict-a","ignored":NaN}',
+                        b'{"id":"strict-a","ignored":1e999}'):
+            with self.subTest(payload=payload):
+                status, _, _ = self.request("POST", "/api/v1/sessions", payload,
+                    {**self.auth(), "Content-Type": "application/json"})
+                self.assertEqual(status, 409)
+                self.assertFalse((self.root/"projects"/"strict-a").exists())
+                self.assertFalse((self.root/"projects"/"strict-b").exists())
 
     def test_no_auth_denied_even_from_localhost_and_no_cors_open(self):
         status,_,headers=self.request("GET","/api/v1/sessions")
@@ -130,15 +222,15 @@ class LocalServerTests(unittest.TestCase):
         ],capture_output=True,check=True,timeout=20)
         data=source.read_bytes()
         self.svc.create_session("upload-a")
-        route="/api/v1/sessions/upload-a/import/cam01_trial"
+        route="/api/v1/sessions/upload-a/import/cam01_board"
         status,_,_=self.request("POST",route,data,headers={
             **self.auth(),"Content-Type":"video/mp4"})
         self.assertEqual(status,409)  # Must explicitly consent.
-        self.assertFalse((self.root/"projects"/"upload-a"/"raw"/"cam01_trial.mp4").exists())
+        self.assertFalse((self.root/"projects"/"upload-a"/"raw"/"cam01_board.mp4").exists())
         status,result,_=self.request("POST",route,data,headers={
             **self.auth(),"Content-Type":"video/mp4","X-KineLab-Consent":"yes"})
         self.assertEqual(status,201,result)
-        stored=self.root/"projects"/"upload-a"/"raw"/"cam01_trial.mp4"
+        stored=self.root/"projects"/"upload-a"/"raw"/"cam01_board.mp4"
         self.assertEqual(hashlib.sha256(stored.read_bytes()).hexdigest(),
                          hashlib.sha256(data).hexdigest())
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
@@ -147,6 +239,21 @@ class LocalServerTests(unittest.TestCase):
             **self.auth(),"Content-Type":"video/mp4","X-KineLab-Consent":"yes"})
         self.assertEqual(status,409)
         self.assertEqual(stored.read_bytes(),data)
+
+    def test_participant_trial_upload_refused_before_staging(self):
+        self.svc.create_session("upload-trial")
+        project=self.root/"projects"/"upload-trial"
+        before=sorted(p.relative_to(project).as_posix() for p in project.rglob("*"))
+        data=b"generated-not-participant-footage"
+        route="/api/v1/sessions/upload-trial/import/cam01_trial"
+        for headers in ({**self.auth(),"Content-Type":"video/mp4","X-KineLab-Consent":"yes"},
+                        {**self.auth(),"Content-Type":"video/mp4"}):
+            status,body,_=self.request("POST",route,data,headers=headers)
+            self.assertEqual(status,409)
+            self.assertIn(b"PARTICIPANT_RECORDING_BLOCKED",body)
+        self.assertFalse((project/"raw"/"cam01_trial.mp4").exists())
+        self.assertFalse((project/"import-staging").exists())
+        self.assertEqual(sorted(p.relative_to(project).as_posix() for p in project.rglob("*")),before)
 
     def test_report_download_requires_bearer_and_exact_named_file(self):
         self.svc.create_session("download-a")
@@ -182,7 +289,7 @@ class LocalServerTests(unittest.TestCase):
         ],capture_output=True,check=True,timeout=20)
         valid_data=source.read_bytes()
         self.svc.create_session("upload-concurrent")
-        route="/api/v1/sessions/upload-concurrent/import/cam01_trial"
+        route="/api/v1/sessions/upload-concurrent/import/cam01_board"
 
         results=[]
         def do_upload(payload):
@@ -200,7 +307,7 @@ class LocalServerTests(unittest.TestCase):
         statuses=[r[0] for r in results]
         self.assertIn(201, statuses)
         self.assertIn(409, statuses)
-        stored=self.root/"projects"/"upload-concurrent"/"raw"/"cam01_trial.mp4"
+        stored=self.root/"projects"/"upload-concurrent"/"raw"/"cam01_board.mp4"
         self.assertTrue(stored.is_file())
         self.assertEqual(hashlib.sha256(stored.read_bytes()).hexdigest(),
                          hashlib.sha256(valid_data).hexdigest())
@@ -211,7 +318,7 @@ class LocalServerTests(unittest.TestCase):
     def test_dns_rebinding_and_evil_host_rejected(self):
         for evil in ("127.0.0.1.attacker.com", "evil.com", "localhost", "192.168.1.5", f"127.0.0.1:{self.port}.attacker.com"):
             with self.subTest(host=evil):
-                st,body,_=self.request("GET","/api/v1/sessions",headers={**self.auth(),"Host":evil})
+                st,_body,_=self.request("GET","/api/v1/sessions",headers={**self.auth(),"Host":evil})
                 self.assertIn(st,(400,403))
 
     def test_artifact_traversal_attempts_refused(self):
@@ -223,9 +330,9 @@ class LocalServerTests(unittest.TestCase):
 
     def test_token_never_reflected_in_errors(self):
         token_str="a"*50
-        st,body,_=self.request("POST","/api/v1/sessions/nonexistent/register",{"confirm":True},headers=self.auth())
+        _st,body,_=self.request("POST","/api/v1/sessions/nonexistent/register",{"confirm":True},headers=self.auth())
         self.assertNotIn(token_str.encode(), body)
-        st,body,_=self.request("GET","/api/v1/nonexistent",headers=self.auth())
+        _st,body,_=self.request("GET","/api/v1/nonexistent",headers=self.auth())
         self.assertNotIn(token_str.encode(), body)
 
     def test_passport_and_comparison_http_endpoints(self):
@@ -240,7 +347,8 @@ class LocalServerTests(unittest.TestCase):
         st,data,_ = self.request("GET", "/api/v1/compare?s1=http-s1&s2=http-s2", headers=self.auth())
         self.assertEqual(st, 200)
         comp = json.loads(data)
-        self.assertTrue(comp["compatible"])
+        self.assertFalse(comp["compatible"])
+        self.assertIn("Insufficient verified reconstruction evidence", comp["reason"])
 
     def test_report_generation_and_download_http_workflow(self):
         self.svc.create_session("http-rep")
@@ -250,7 +358,8 @@ class LocalServerTests(unittest.TestCase):
         self.assertTrue(res["ok"])
 
         # Check artifact download of generated PDF
-        pdf_key = "exports/http-rep-research-report.pdf"
+        pdf_key = next(item['key'] for item in self.svc.reports('http-rep')
+                       if item['filename'] == 'http-rep-research-report.pdf')
         st,pdf_bytes,headers = self.request("GET", f"/api/v1/sessions/http-rep/artifact/{pdf_key}", headers=self.auth())
         self.assertEqual(st, 200)
         self.assertEqual(headers.get("Content-Type"), "application/pdf")
@@ -269,10 +378,24 @@ class LocalServerTests(unittest.TestCase):
         backups = json.loads(data).get("backups", [])
         self.assertTrue(any(b["filename"] == bk_file for b in backups))
 
+        original = self.svc._project("http-bk")
+        before = (original / "Config.toml").read_bytes()
         st,data,_ = self.request("POST", "/api/v1/backup/restore", {"confirm": True, "backup_name": bk_file, "overwrite": True}, headers=self.auth())
+        self.assertEqual(st, 409)
+        self.assertIn("RESTORE_OVERWRITE_UNAVAILABLE", json.loads(data)["error"])
+        self.assertEqual((original / "Config.toml").read_bytes(), before)
+        active_db = self.svc.index.db_path.read_bytes()
+        st,data,_ = self.request("POST", "/api/v1/backup/restore", {"confirm": True, "backup_name": bk_file, "overwrite": False}, headers=self.auth())
         self.assertEqual(st, 200)
         r_res = json.loads(data)
         self.assertTrue(r_res["ok"])
+        self.assertTrue(r_res["database_restored"])
+        self.assertFalse(r_res["active_workspace_changed"])
+        recovered = self.svc.projects_root / r_res["recovery_directory"]
+        self.assertTrue((recovered / ".kinelab_index.db").is_file())
+        self.assertEqual((recovered / "http-bk/Config.toml").read_bytes(), before)
+        self.assertEqual(self.svc.index.db_path.read_bytes(), active_db)
+        self.assertEqual((original / "Config.toml").read_bytes(), before)
 
     def test_session_motion_endpoint(self):
         self.svc.create_session("http-mot")
@@ -280,12 +403,26 @@ class LocalServerTests(unittest.TestCase):
         exports_dir = session_folder / "exports"
         exports_dir.mkdir(parents=True, exist_ok=True)
         motion_file = exports_dir / "http-mot.motion.json"
-        motion_file.write_text(json.dumps({"schema": "kinelab.motion.v2", "kind": "real", "frames": []}), encoding="utf-8")
+        from export_motion import motion
+        from native_evidence_fixture import complete_native_fixture
+        from session_contract import ROLES
+        from setup_project import register_captures
+        from test_export_motion import trc_text
+        for role in ROLES:
+            (session_folder / "raw" / (role + ".mp4")).write_bytes(("generated " + role).encode())
+        register_captures(session_folder, "http-mot", "real")
+        manifest, trc, _ = complete_native_fixture(session_folder, trc_text())
+        document = motion(trc, run_manifest=manifest)
+        motion_file.write_text(json.dumps(document), encoding="utf-8")
 
         st, data, _ = self.request("GET", "/api/v1/sessions/http-mot/motion", headers=self.auth())
         self.assertEqual(st, 200)
         mot = json.loads(data)
         self.assertEqual(mot.get("schema"), "kinelab.motion.v2")
+        document["frames"][0]["xyz"][0][0] += 1
+        motion_file.write_text(json.dumps(document), encoding="utf-8")
+        st, _, _ = self.request("GET", "/api/v1/sessions/http-mot/motion", headers=self.auth())
+        self.assertEqual(st, 409)
 
         # Session without motion returns 409
         self.svc.create_session("http-no-mot")

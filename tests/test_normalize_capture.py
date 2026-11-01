@@ -1,14 +1,13 @@
-import copy
 import hashlib
 import importlib.util
 import json
-from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
-import subprocess
-import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -39,21 +38,20 @@ class NormalizeTests(unittest.TestCase):
 
     def test_nonmonotonic_pts_and_geometry_mismatch_rejected(self):
         bad = dict(self.video, timestamps=[0, 0, 0.03])
-        with patch.object(self.module, "inspect_video", return_value=bad):
-            with self.assertRaisesRegex(ValueError, "TIMING"):
-                self.module.validate_sources(self.session, self.project)
+        with patch.object(self.module, "inspect_video", return_value=bad), self.assertRaisesRegex(ValueError, "TIMING"):
+            self.module.validate_sources(self.session, self.project)
         videos = [self.video] * 5 + [dict(self.video, width=1920)]
-        with patch.object(self.module, "inspect_video", side_effect=videos):
-            with self.assertRaisesRegex(ValueError, "GEOMETRY"):
-                self.module.validate_sources(self.session, self.project)
+        with patch.object(self.module, "inspect_video", side_effect=videos), self.assertRaisesRegex(ValueError, "GEOMETRY"):
+            self.module.validate_sources(self.session, self.project)
 
     def test_conversion_failure_preserves_all_existing_outputs(self):
         destinations = []
         for relative in self.module.ROLES.values():
             path = self.project / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b"old"); destinations.append(path)
-        with patch.object(self.module, "inspect_video", return_value=self.video), patch.object(self.module, "_convert", side_effect=RuntimeError("encoder failed")):
-            with self.assertRaisesRegex(RuntimeError, "encoder failed"):
-                self.module.normalize_session(self.session, self.project, overwrite=True)
+        with (patch.object(self.module, "inspect_video", return_value=self.video),
+                patch.object(self.module, "_convert", side_effect=RuntimeError("encoder failed")),
+                self.assertRaisesRegex(RuntimeError, "encoder failed")):
+            self.module.normalize_session(self.session, self.project, overwrite=True)
         self.assertTrue(all(path.read_bytes() == b"old" for path in destinations))
 
     def test_existing_destination_rejected_before_conversion(self):

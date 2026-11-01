@@ -1,3 +1,12 @@
+# Current candidate package notice
+
+Current candidate acceptance: NOT_GRANTED. Clean-machine validation: NOT_RUN. Physical validation: BLOCKED_ON_PHYSICAL_EVIDENCE. Clinical validation: UNVERIFIED.
+
+The report below is retained historical evidence from an earlier workstation package. Its archive hash, file counts, dependencies and PASS/status claims do not describe or verify this candidate. Its original shortcut instructions are superseded: preserve the existing installation and original shortcut; use only the isolated KineLab PT Candidate entry point and fresh TEST_ONLY data for current candidate verification.
+
+Follow the generated README-OFFLINE-INSTALL.md and app/RUNBOOK.md in this package. Verify this package against its own DISTRIBUTION-MANIFEST.json. Package integrity proves file hashes only; it does not grant runtime, clean-machine or release acceptance.
+
+<!-- CURRENT-CANDIDATE-NOTICE:END -->
 # KineLab PT — Clean-Machine Installation & Verification Report
 
 ## 1. Package Specifications

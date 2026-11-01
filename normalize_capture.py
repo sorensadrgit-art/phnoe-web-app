@@ -1,15 +1,18 @@
 """Validate six registered originals, then transactionally normalize local footage."""
 import argparse
-from bisect import bisect_right
-from fractions import Fraction
 import json
 import math
-from pathlib import Path
 import subprocess
 import tempfile
+import time
 import tomllib
+from bisect import bisect_right
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from fractions import Fraction
+from itertools import pairwise
+from pathlib import Path
 
-from session_contract import load_session, sha256_file, validate_session
+from session_contract import load_session, sha256_file, strict_json_loads, validate_session
 
 ROOT = Path(__file__).resolve().parent / "projects/kinelab-dualcam"
 ROLES = {
@@ -21,11 +24,45 @@ ROLES = {
 }
 
 
+_PROBE_STDOUT_LIMIT = 64 * 1024 * 1024
+_PROBE_STDERR_LIMIT = 64 * 1024
+_PROBE_TIMEOUT_S = 120
+
+
+def _probe_output(command):
+    """Bound decoder wall time and both pipes before parsing any output."""
+    def limited(stream, cap):
+        data = stream.read(cap + 1)
+        if len(data) > cap:
+            raise ValueError("VIDEO_TIMING_INVALID: decoder output limit exceeded")
+        return data
+
+    deadline = time.monotonic() + _PROBE_TIMEOUT_S
+    with (subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False) as process,
+          ThreadPoolExecutor(max_workers=2) as pool):
+        readers = [pool.submit(limited, process.stdout, _PROBE_STDOUT_LIMIT),
+                   pool.submit(limited, process.stderr, _PROBE_STDERR_LIMIT)]
+        try:
+            done, pending = wait(readers, timeout=_PROBE_TIMEOUT_S, return_when=FIRST_EXCEPTION)
+            for future in done:
+                future.result()
+            if pending:
+                raise ValueError("VIDEO_TIMING_INVALID: decoder timed out")
+            code = process.wait(timeout=max(.001, deadline - time.monotonic()))
+            stdout, stderr = (future.result() for future in readers)
+            if code != 0 or stderr.strip():
+                raise ValueError("VIDEO_TIMING_INVALID: decoder failed or reported an error")
+            return stdout.decode("utf-8")
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+
+
 def inspect_video(path: Path) -> dict:
     command = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_streams", "-show_frames", "-show_format", "-of", "json", str(path)]
     try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8")
-        data = json.loads(result.stdout)
+        data = strict_json_loads(_probe_output(command))
         stream = data["streams"][0]
         timestamps = [float(frame.get("best_effort_timestamp_time", frame.get("pts_time"))) for frame in data["frames"] if frame.get("media_type") == "video"]
         ticks = [int(frame.get("best_effort_timestamp", frame.get("pts"))) for frame in data["frames"] if frame.get("media_type") == "video"]
@@ -39,7 +76,7 @@ def inspect_video(path: Path) -> dict:
                 "time_base": stream.get("time_base"), "timestamp_ticks": ticks, "timestamps": timestamps, "frame_count": len(timestamps), "duration": duration}
     except FileNotFoundError as error:
         raise ValueError("INPUT_MISSING: FFprobe is required on PATH") from error
-    except (subprocess.CalledProcessError, ValueError, KeyError, TypeError, IndexError) as error:
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError, IndexError, AttributeError) as error:
         raise ValueError("VIDEO_TIMING_INVALID: cannot decode timing/geometry for " + str(path)) from error
 
 
@@ -50,7 +87,7 @@ def probe(path):
 def _timing(meta, role):
     timestamps = meta.get("timestamps", [])
     if (not timestamps or any(type(value) not in (int, float) or not math.isfinite(value) for value in timestamps)
-            or any(b <= a for a, b in zip(timestamps, timestamps[1:]))
+            or any(b <= a for a, b in pairwise(timestamps))
             or not math.isfinite(meta.get("duration", 0)) or meta.get("duration", 0) <= 0):
         raise ValueError("VIDEO_TIMING_INVALID: finite increasing decoded PTS required for " + role)
     if meta.get("frame_count") != len(timestamps):
@@ -67,7 +104,8 @@ def validate_sources(session: dict, project: Path) -> dict:
     validate_session(session, project)
     if not (project / "Config.toml").is_file():
         raise ValueError("INPUT_MISSING: Config.toml")
-    details, geometries = {}, {}
+    details: dict[str, dict] = {}
+    geometries: dict[str, object] = {}
     for role in ROLES:
         meta = inspect_video(project / session["captures"][role]["path"])
         _timing(meta, role)
@@ -116,12 +154,12 @@ def _validate_output(meta, role):
     if (meta["width"], meta["height"]) != (1280, 720) or Fraction(meta["fps"]) != 30 or meta.get("rotation", 0) != 0:
         raise ValueError("VIDEO_GEOMETRY_INVALID: normalized output must be unrotated 1280x720 at 30/1")
     timestamps = meta["timestamps"]
-    if abs(timestamps[0]) > .001 or any(abs(b - a - 1/30) > .001 for a, b in zip(timestamps, timestamps[1:])):
+    if abs(timestamps[0]) > .001 or any(abs(b - a - 1/30) > .001 for a, b in pairwise(timestamps)):
         raise ValueError("VIDEO_TIMING_INVALID: normalized output is not zero-origin CFR 30")
 
 
 def _check_board(path, role, config):
-    if not (role.endswith("intrinsics") or role.endswith("board")):
+    if not role.endswith(("intrinsics", "board")):
         return None
     import cv2
     calculate = config.get("calibration", {}).get("calculate", {})
@@ -185,14 +223,13 @@ def normalize_session(session: dict, project: Path, overwrite: bool = False) -> 
     report = _identity(session, project)
     normalization = {"schema": "kinelab.normalization.v1", "session_id": session["session_id"], "config_sha256": report["config_sha256"], "inputs": report["inputs"], "outputs": {}}
     with tempfile.TemporaryDirectory(prefix=".normalize-", dir=project) as directory:
-        directory = Path(directory); staged = []
+        staging = Path(directory); staged = []
         for role, destination in destinations.items():
             source = project / session["captures"][role]["path"]
-            temporary = directory / (role + ".mp4")
+            temporary = staging / (role + ".mp4")
             _convert(source, temporary, sources[role])
             output = inspect_video(temporary); _validate_output(output, role)
             board = _check_board(temporary, role, config)
-            original_pts = sources[role]["timestamps"]
             ticks = sources[role]["timestamp_ticks"]
             time_base = Fraction(sources[role]["time_base"])
             bins = [int((tick - ticks[0]) * time_base * 30) for tick in ticks]
@@ -204,7 +241,7 @@ def normalize_session(session: dict, project: Path, overwrite: bool = False) -> 
             staged.append((temporary, destination))
         validate_session(session, project)
         for name, data in (("normalization.json", normalization), ("preflight.json", report)):
-            temporary = directory / name; temporary.write_text(json.dumps(data, indent=2, allow_nan=False), encoding="utf-8")
+            temporary = staging / name; temporary.write_text(json.dumps(data, indent=2, allow_nan=False), encoding="utf-8")
             staged.append((temporary, project / name))
         _commit(project, staged)
     return report

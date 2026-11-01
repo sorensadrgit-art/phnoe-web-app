@@ -1,3 +1,12 @@
+# Current candidate package notice
+
+Current candidate acceptance: NOT_GRANTED. Clean-machine validation: NOT_RUN. Physical validation: BLOCKED_ON_PHYSICAL_EVIDENCE. Clinical validation: UNVERIFIED.
+
+The PASS rows and checked boxes below are retained historical claims for an earlier source/workstation scope. They do not accept this candidate or prove its current native runtime, accessibility, physical accuracy or clinical validity. The original shortcut claim describes the preserved installation; use only the isolated KineLab PT Candidate entry point and fresh TEST_ONLY data for current candidate verification.
+
+Follow the generated README-OFFLINE-INSTALL.md and app/RUNBOOK.md in this package. Use the exact candidate's source pins and scoped runtime evidence for each acceptance gate; this historical matrix and package file integrity cannot supply missing evidence.
+
+<!-- CURRENT-CANDIDATE-NOTICE:END -->
 # KineLab PT — Release Acceptance Matrix
 
 ## Milestone Verification Summary

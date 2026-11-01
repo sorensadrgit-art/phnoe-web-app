@@ -1,10 +1,11 @@
 """Evidence-first T3: manually observed video cue pairs, never synthetic clinical sync."""
 from __future__ import annotations
 
+import hashlib
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from session_contract import ROLES, sha256_file
 from session_library import SessionLibrary
@@ -127,14 +128,14 @@ class SyncEvidenceTests(unittest.TestCase):
         record = prepare_sync(self.project, self.cues, reference="cam02", operator_confirmed=True)
         (self.project / "logs.txt").write_text(
             "Camera cam02 and cam01: 14 frames offset correlation 0.95\n", encoding="utf-8")
-        result = validate_sync(self.project, self.session, record)
+        result = validate_sync(self.project, self.session, record, [0, len(data := (self.project / "logs.txt").read_bytes()), hashlib.sha256(data).hexdigest()])
         self.assertTrue(result["ok"], result["errors"])
         self.assertEqual(result["reference"], "cam02")
         self.assertEqual(result["cameras"]["cam01"]["offset_frames"], 14)
         # A fabricated native log is used *only* in this test fixture; never actual validation.
         (self.project / "logs.txt").write_text(
             "Camera cam02 and cam01: 15 frames offset correlation 0.95\n", encoding="utf-8")
-        rejected = validate_sync(self.project, self.session, record)
+        rejected = validate_sync(self.project, self.session, record, [0, len(data := (self.project / "logs.txt").read_bytes()), hashlib.sha256(data).hexdigest()])
         self.assertFalse(rejected["ok"])
 
     def test_existing_passing_data_remains_labelled_unvalidated_until_native_sync(self):

@@ -1,0 +1,2 @@
+"""Read-only KineLab CLI-Anything harness."""
+__version__ = "0.1.0"

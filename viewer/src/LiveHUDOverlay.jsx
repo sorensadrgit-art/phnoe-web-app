@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { PHASES } from './exerciseStateMachine.js';
+import { EXERCISE_TYPES, PHASES } from './exerciseStateMachine.js';
+import { computeExerciseMetric, isKneeAngle } from './liveDisplayHelper.js';
 
 /**
  * Standard MediaPipe skeleton bone connections.
@@ -28,11 +29,20 @@ export default function LiveHUDOverlay({
   landmarks,
   kinematics,
   trackerState,
+  activeSide = 'left',
+  exerciseType = null,
   mirrored = true,
   width = 640,
   height = 480,
+  sourceSize = null,
 }) {
   const canvasRef = useRef(null);
+  const activeExerciseType = exerciseType || trackerState?.exerciseType || EXERCISE_TYPES.SQUAT;
+  const isBalance = activeExerciseType === EXERCISE_TYPES.BALANCE;
+  const targetROM = trackerState?.targetROM || (isBalance ? 30 : 80);
+  const currentDepth = computeExerciseMetric(kinematics, activeExerciseType, activeSide, trackerState);
+  const metricAvailable = currentDepth !== null;
+  const metricText = metricAvailable ? `${Math.round(currentDepth)}${isBalance ? 's' : '°'}` : 'UNAVAILABLE';
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -55,11 +65,11 @@ export default function LiveHUDOverlay({
     ctx.save();
     // Support mirroring coordinates horizontally if video is mirrored
     const mapX = (x) => {
-      // If coordinates are normalized [0, 1]
-      const rawX = x <= 1.0 ? x * width : x;
-      return mirrored ? width - rawX : rawX;
+      const drawnWidth=sourceSize?sourceSize.width*Math.min(width/sourceSize.width,height/sourceSize.height):width;
+      return (width-drawnWidth)/2+(mirrored?1-x:x)*drawnWidth;
     };
-    const mapY = (y) => (y <= 1.0 ? y * height : y);
+    const drawnHeight=sourceSize?sourceSize.height*Math.min(width/sourceSize.width,height/sourceSize.height):height;
+    const mapY = y => (height-drawnHeight)/2+y*drawnHeight;
 
     // 1. Draw Skeleton Bones
     ctx.lineWidth = 4;
@@ -147,35 +157,28 @@ export default function LiveHUDOverlay({
     if (kinematics) {
       // Left knee badge (landmark 25)
       const lKnee = landmarks[25];
-      if (lKnee && (lKnee.visibility === undefined || lKnee.visibility >= 0.4) && kinematics.leftKneeFlexion !== null) {
-        const tone = kinematics.leftKneeFlexion >= (trackerState?.targetROM || 80) ? 'success' : 'neutral';
-        drawBadge(`L: ${kinematics.leftKneeFlexion}°`, mapX(lKnee.x), mapY(lKnee.y), tone);
+      if (lKnee && (lKnee.visibility === undefined || lKnee.visibility >= 0.4) && isKneeAngle(kinematics.leftKneeFlexion)) {
+        drawBadge(`L: ${kinematics.leftKneeFlexion}°`, mapX(lKnee.x), mapY(lKnee.y));
       }
       // Right knee badge (landmark 26)
       const rKnee = landmarks[26];
-      if (rKnee && (rKnee.visibility === undefined || rKnee.visibility >= 0.4) && kinematics.rightKneeFlexion !== null) {
-        const tone = kinematics.rightKneeFlexion >= (trackerState?.targetROM || 80) ? 'success' : 'neutral';
-        drawBadge(`R: ${kinematics.rightKneeFlexion}°`, mapX(rKnee.x), mapY(rKnee.y), tone);
+      if (rKnee && (rKnee.visibility === undefined || rKnee.visibility >= 0.4) && isKneeAngle(kinematics.rightKneeFlexion)) {
+        drawBadge(`R: ${kinematics.rightKneeFlexion}°`, mapX(rKnee.x), mapY(rKnee.y));
       }
       // Trunk lean badge at midpoint of shoulders
       if (landmarks[11] && landmarks[12] &&
           (landmarks[11].visibility === undefined || landmarks[11].visibility >= 0.4) &&
           (landmarks[12].visibility === undefined || landmarks[12].visibility >= 0.4) &&
-          kinematics.trunkLean !== null) {
+          Number.isFinite(kinematics.trunkLean)) {
         const sMidX = (landmarks[11].x + landmarks[12].x) / 2;
         const sMidY = (landmarks[11].y + landmarks[12].y) / 2;
-        const tone = kinematics.trunkLean > 30 ? 'warning' : 'neutral';
+        const tone = metricAvailable && kinematics.trunkLean > 30 ? 'warning' : 'neutral';
         drawBadge(`Trunk: ${kinematics.trunkLean}°`, mapX(sMidX), mapY(sMidY) - 10, tone);
       }
     }
 
     // 4. Target Depth / Hold Arc Gauge (Top Right)
-    const isBalance = trackerState?.exerciseType === 'balance';
-    const targetROM = trackerState?.targetROM || (isBalance ? 30 : 80);
-    const currentDepth = isBalance
-      ? (trackerState?.balanceHoldSeconds ?? 0)
-      : Math.max(kinematics?.leftKneeFlexion ?? 0, kinematics?.rightKneeFlexion ?? 0);
-    const progress = Math.min(1.0, currentDepth / Math.max(1, targetROM));
+    const progress = metricAvailable ? Math.max(0, Math.min(1.0, currentDepth / Math.max(1, targetROM))) : 0;
 
     const gaugeX = width - 60;
     const gaugeY = 60;
@@ -202,17 +205,17 @@ export default function LiveHUDOverlay({
 
     // Center text
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 15px system-ui';
+    ctx.font = metricAvailable ? 'bold 15px system-ui' : 'bold 9px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(isBalance ? `${Math.round(currentDepth)}s` : `${Math.round(currentDepth)}°`, gaugeX, gaugeY - 4);
+    ctx.fillText(metricText, gaugeX, gaugeY - 4);
     ctx.font = '10px system-ui';
     ctx.fillStyle = '#94a3b8';
     ctx.fillText(isBalance ? `/${targetROM}s` : `/${targetROM}°`, gaugeX, gaugeY + 12);
     ctx.restore();
 
     ctx.restore();
-  }, [landmarks, kinematics, trackerState, mirrored, width, height]);
+  }, [landmarks, kinematics, trackerState, mirrored, width, height, sourceSize, currentDepth, metricAvailable, metricText, isBalance, targetROM]);
 
   // Phase colors
   const phaseColors = {
@@ -224,7 +227,7 @@ export default function LiveHUDOverlay({
     [PHASES.REP_COMPLETED]: '#34d399',
   };
 
-  const currentPhase = trackerState?.phase || PHASES.IDLE;
+  const currentPhase = metricAvailable ? trackerState?.phase || PHASES.IDLE : 'UNAVAILABLE';
   const phaseColor = phaseColors[currentPhase] || '#64748b';
 
   return (
@@ -239,6 +242,10 @@ export default function LiveHUDOverlay({
 
       {/* HTML HUD Controls & Readouts */}
       <div className="uw-hud-ui" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 12 }}>
+        <output aria-label="Current exercise metric" style={{ position: 'absolute', width: 1, height: 1, padding: 0,
+          margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>
+          {metricText}
+        </output>
         {/* Top-Left: Jumbo Rep Counter & Phase Pill */}
         <div style={{ position: 'absolute', top: 16, left: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="uw-hud-jumbo-rep" style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
@@ -248,7 +255,7 @@ export default function LiveHUDOverlay({
             <span style={{ fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.1em', color: '#38bdf8', textTransform: 'uppercase' }}>
               REPS
             </span>
-            {trackerState?.validRepCount !== undefined && (
+            {Number.isFinite(trackerState?.validRepCount) && (
               <span style={{ fontSize: '0.9rem', color: '#94a3b8', marginLeft: 8 }}>
                 ({trackerState.validRepCount} valid)
               </span>
@@ -295,12 +302,12 @@ export default function LiveHUDOverlay({
           }}
         >
           <div style={{ color: '#00f3ff', fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.1em', marginBottom: 2, textTransform: 'uppercase' }}>
-            BIOFEEDBACK COACH
+            {trackerState?.projectionOnly?'PROJECTED MOVEMENT · UNVERIFIED':'SYNTHETIC PROTOCOL TEST'}
           </div>
           <div style={{ color: '#f8fafc', fontSize: '1.05rem', fontWeight: 600 }}>
-            {trackerState?.lastCoachingMessage || 'Get in position to begin'}
+            {metricAvailable ? trackerState?.lastCoachingMessage || 'Get in position to begin' : 'Exercise geometry UNAVAILABLE'}
           </div>
-          {trackerState?.currentFaults && trackerState.currentFaults.length > 0 && (
+          {metricAvailable && trackerState?.currentFaults && trackerState.currentFaults.length > 0 && (
             <div style={{ marginTop: 4, display: 'flex', gap: 6, justifyContent: 'center' }}>
               {trackerState.currentFaults.map((fault) => (
                 <span

@@ -1,0 +1,185 @@
+{
+  "schema": "kinelab.software-regression-matrix.v1",
+  "scope": "kinelab.first-party-software.v1",
+  "rules": [
+    {
+      "path": "*.py",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "*.json",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "*.txt",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "*.toml",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "*.ini",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "*.cfg",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "*.yaml",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "*.yml",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "tools/*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "tests/*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "agent-harness/*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "viewer/src/*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "viewer/public/motion/*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "viewer/package.json",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "viewer/package-lock.json",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "viewer/vite.config.*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "viewer/index.html",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "viewer/vercel.json",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "models/*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": ".github/workflows/*",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "requirements*.txt",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "environment.json",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "model-cache.json",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "ruff.toml",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    },
+    {
+      "path": "mypy.ini",
+      "checks": [
+        "python-tests",
+        "node-tests"
+      ]
+    }
+  ],
+  "generated_fixtures": {
+    "viewer/src/fixtures/researchComparison.generated.json": "461add5b2212e797f4aa68eccea9b2b499ee5c6c7007ab0b7a4c8c4fdda23199",
+    "viewer/src/fixtures/comparisonRevision.generated.json": "f0678493e3763c53eb9947b9161883727522fde42a2cd852866ec3c91d1cbe3d"
+  }
+}

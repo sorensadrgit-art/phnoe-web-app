@@ -1,6 +1,7 @@
 """Generate a 7x9-inner-corner 20mm checkerboard SVG for printing at actual size."""
-from pathlib import Path
 import sys
+from pathlib import Path
+
 cols,rows,square=8,10,20
 out=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path(__file__).with_name("checkerboard_20mm.svg")
 lines=['<svg xmlns="http://www.w3.org/2000/svg" width="186mm" height="240mm" viewBox="0 0 186 240">',

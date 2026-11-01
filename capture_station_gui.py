@@ -1,21 +1,26 @@
-"""Desktop Capture Station. Local-only; camera starts solely on explicit Record click."""
+"""Desktop Capture Station. Participant recording is blocked pending protocol approval."""
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from capture_station import (
-    DEFAULT_PROJECT, RAW_ROLES, WEBCAM_ROLES, RECOMMENDED_SECONDS,
-    ROLE_GUIDE, check_readiness, clip_path, ffmpeg_command, finalize_recording,
-    import_phone_mp4, prepare_recording, save_board_measurement
+    DEFAULT_PROJECT,
+    PARTICIPANT_RECORDING_BLOCKED,
+    RAW_ROLES,
+    RECOMMENDED_SECONDS,
+    ROLE_GUIDE,
+    finalize_recording,
+    import_phone_mp4,
+    save_board_measurement,
 )
-from session_library import SessionLibrary, SessionError
-from workflow_controller import WorkflowController, WorkflowBlocked
+from session_library import PARTICIPANT_TRIAL_ROLES, SessionError, SessionLibrary
+from workflow_controller import WorkflowBlocked, WorkflowController
 
 ROOT = Path(__file__).resolve().parent
 BG = "#09131D"
@@ -58,8 +63,8 @@ class CaptureApp(tk.Tk):
         self.started_at = 0
         self.capture_duration = 0
         self.stop_requested = False
-        self.status_nodes = {}
-        self.workflow = None
+        self.status_nodes: dict[str, tk.Label] = {}
+        self.workflow: WorkflowController | None = None
         self.library = SessionLibrary(ROOT / "projects")
         self.project = self.library.open_session(initial_session_id or DEFAULT_PROJECT.name)
         self._build()
@@ -135,7 +140,7 @@ class CaptureApp(tk.Tk):
         button(left, "Read processing runbook", lambda: os.startfile(str(ROOT / "RUNBOOK.md"))).pack(fill="x")
 
         label(right, "04   CAPTURE THE SIX ORIGINAL CLIPS", size=11, bold=True, color=ACCENT).pack(anchor="w")
-        label(right, "Phone: import MP4. Webcam: press Record only when ready.", color=MUTED, size=9).pack(anchor="w", pady=(5, 12))
+        label(right, "Phone: import MP4. Webcam recording is blocked pending independent protocol approval.", color=MUTED, size=9).pack(anchor="w", pady=(5, 12))
         for role in RAW_ROLES:
             row = tk.Frame(right, bg="#152A38", padx=10, pady=7)
             row.pack(fill="x", pady=4)
@@ -149,8 +154,11 @@ class CaptureApp(tk.Tk):
             if role.startswith("cam01"):
                 button(row, "Import phone MP4", lambda role=role: self.import_phone(role)).pack(anchor="w")
             else:
-                button(row, f"Record webcam · {RECOMMENDED_SECONDS[role]} s",
-                       lambda role=role: self.record_webcam(role)).pack(anchor="w")
+                record_button = button(row, f"Record webcam · {RECOMMENDED_SECONDS[role]} s",
+                                       lambda role=role: self.record_webcam(role))
+                record_button.configure(state="disabled")
+                record_button.pack(anchor="w")
+                label(row, PARTICIPANT_RECORDING_BLOCKED, size=8, wraplength=360).pack(anchor="w")
             alternatives = tk.Frame(row, bg=row.cget("bg"))
             alternatives.pack(fill="x", pady=(6, 0))
             button(alternatives, "Stage alternate MP4",
@@ -198,7 +206,7 @@ class CaptureApp(tk.Tk):
         self.summary.pack(fill="x", padx=30, pady=(0, 12))
 
     def inspect_recovery_ui(self):
-        from workflow_recovery import RecoveryBlocked, inspect_recovery, archive_orphaned_lock
+        from workflow_recovery import RecoveryBlocked, archive_orphaned_lock, inspect_recovery
         try:
             info = inspect_recovery(self.project)
             lines = [
@@ -430,6 +438,9 @@ class CaptureApp(tk.Tk):
         self.refresh()
 
     def stage_alternate(self, role: str):
+        if role in PARTICIPANT_TRIAL_ROLES:
+            messagebox.showerror("Cannot stage take", PARTICIPANT_RECORDING_BLOCKED, parent=self)
+            return
         if not self._ensure_editable():
             return
         source = filedialog.askopenfilename(
@@ -451,6 +462,9 @@ class CaptureApp(tk.Tk):
         self.refresh()
 
     def accept_alternate(self, role: str):
+        if role in PARTICIPANT_TRIAL_ROLES:
+            messagebox.showerror("Take selection refused", PARTICIPANT_RECORDING_BLOCKED, parent=self)
+            return
         if not self._ensure_editable():
             return
         folder = self.project / "takes" / role
@@ -487,7 +501,7 @@ class CaptureApp(tk.Tk):
             if not board.exists():
                 subprocess.run([sys.executable, str(ROOT / "make_board.py"), str(board)], check=True)
             os.startfile(str(board))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  GUI action boundary: any failure is shown to the operator, never crashes the window
             messagebox.showerror("Printable board", str(exc), parent=self)
 
     def open_raw(self):
@@ -501,10 +515,13 @@ class CaptureApp(tk.Tk):
             result = save_board_measurement(self.project, value, self.operator.get())
             messagebox.showinfo("Recorded", f"Operator-measured square: {result['measured_square_mm']} mm.\nNo clinical accuracy claim is implied.", parent=self)
             self.refresh()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  GUI action boundary: any failure is shown to the operator, never crashes the window
             messagebox.showerror("Board measurement", str(exc), parent=self)
 
     def import_phone(self, role: str):
+        if role == "cam01_trial":
+            messagebox.showerror("Import blocked", PARTICIPANT_RECORDING_BLOCKED, parent=self)
+            return
         if not self._ensure_editable():
             return
         file = filedialog.askopenfilename(
@@ -522,45 +539,13 @@ class CaptureApp(tk.Tk):
             imported = import_phone_mp4(self.project, role, Path(file))
             self.current.configure(text="CAMERA IDLE")
             messagebox.showinfo("Import complete", f"Copied and validated:\n{imported}", parent=self)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  GUI action boundary: any failure is shown to the operator, never crashes the window
             self.current.configure(text="IMPORT FAILED", fg="#F8BB91")
             messagebox.showerror("Phone import failed", str(exc), parent=self)
         self.refresh()
 
     def record_webcam(self, role: str):
-        if self.process is not None:
-            messagebox.showwarning("Already recording", "Finish the current webcam recording first.", parent=self)
-            return
-        if self._workflow_running():
-            messagebox.showwarning("Processing active", "Finish the local processing action first.", parent=self)
-            return
-        if not self._ensure_editable():
-            return
-        seconds = RECOMMENDED_SECONDS[role]
-        try:
-            _dest, partial = prepare_recording(self.project, role, seconds)
-            if not messagebox.askyesno("Start live webcam recording?",
-                 f"The Integrated Webcam will turn ON now.\n\nClip: {role}.mp4\nDuration: up to {seconds} seconds\nLocal only; no uploading.\n\nFor the trial, start your PHONE recording immediately afterward, then perform visible START and END cues.",
-                 parent=self):
-                return
-            log = (self.project / "capture-station.log").open("ab")
-            try:
-                self.process = subprocess.Popen(
-                    ffmpeg_command(partial, seconds), cwd=str(ROOT),
-                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=log,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            finally:
-                log.close()
-            self.current_role = role
-            self.started_at = time.monotonic()
-            self.capture_duration = seconds
-            self.stop_requested = False
-            self.stop_btn.configure(state="normal")
-            self._poll()
-        except Exception as exc:
-            self.process = None
-            self.stop_btn.configure(state="disabled")
-            messagebox.showerror("Recording could not start", str(exc), parent=self)
+        messagebox.showerror("Recording blocked", PARTICIPANT_RECORDING_BLOCKED, parent=self)
 
     def _poll(self):
         if self.process is None:
@@ -581,7 +566,7 @@ class CaptureApp(tk.Tk):
             result = finalize_recording(self.project, role)
             self.current.config(text="CAPTURE SAVED", fg=ACCENT)
             messagebox.showinfo("Webcam clip saved", f"{result.name}\nLocal original has been preserved.", parent=self)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  GUI action boundary: any failure is shown to the operator, never crashes the window
             self.current.config(text="CAPTURE NEEDS ATTENTION", fg="#F8BB91")
             messagebox.showerror("Capture not finalized", str(exc), parent=self)
         self.refresh()
@@ -594,7 +579,7 @@ class CaptureApp(tk.Tk):
             self.process.stdin.write(b"q\n")
             self.process.stdin.flush()
             self.current.config(text="STOPPING CAMERA, FINALIZING MP4…", fg="#FF9C75")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  GUI action boundary: any failure is shown to the operator, never crashes the window
             messagebox.showwarning("Stop failed", f"{exc}\nCapture will end automatically by its timer.", parent=self)
 
     def refresh(self):
@@ -637,6 +622,15 @@ class CaptureApp(tk.Tk):
             self.summary.configure(text=line)
         except (OSError, ValueError, SessionError) as error:
             self.summary.configure(text="SESSION ERROR: " + str(error))
+
+    def destroy(self):
+        super().destroy()
+        # Widgets (via `master`) and Tk variables (via `_root`) point back here; leaving that
+        # cycle to the collector can finalize the Tcl interpreter on a non-Tk thread and leak it.
+        for name, value in list(vars(self).items()):
+            if isinstance(value, (tk.Misc, tk.Variable)) and name != "master":
+                delattr(self, name)
+        self.status_nodes.clear()
 
     def close_safe(self):
         if self.process is not None and self.process.poll() is None:

@@ -1,9 +1,10 @@
 """Frame review must not silently label the wrong decoded frame as an observed cue."""
 import unittest
+
 import cv2
 import numpy as np
 
-from sync_review_gui import read_exact_frame, FrameReviewError
+from sync_review_gui import FrameReviewError, read_exact_frame
 
 
 class FakeVideo:
@@ -63,9 +64,10 @@ class FrameReviewTests(unittest.TestCase):
         import shutil
         import subprocess
         import tempfile
+        import tkinter as tk
         from pathlib import Path
         from unittest.mock import patch
-        import tkinter as tk
+
         from sync_review_gui import SyncReviewWindow
         if not shutil.which("ffmpeg"):
             self.skipTest("FFmpeg not available")
@@ -103,6 +105,60 @@ class FrameReviewTests(unittest.TestCase):
                 if dialog is not None and dialog.winfo_exists():
                     dialog.close()
                 tkroot.destroy()
+
+    def test_closed_window_is_released_without_cyclic_gc(self):
+        # Tk objects freed later by cyclic GC can be finalized on a non-Tk thread, which leaks the
+        # Tcl interpreter; closing must leave nothing that needs the cycle collector.
+        import gc
+        import tempfile
+        import tkinter as tk
+        import weakref
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from sync_review_gui import SyncReviewWindow
+
+        class SeekVideo:
+            def __init__(self, *_):
+                self.position = 0
+
+            def isOpened(self):
+                return True
+
+            def set(self, key, position):
+                self.position = position
+                return True
+
+            def read(self):
+                return True, np.zeros((24, 32, 3), dtype=np.uint8)
+
+            def get(self, key):
+                return self.position + 1
+
+            def release(self):
+                pass
+
+        files = {cam: {"path": Path(cam + ".mp4"), "frames": 10, "timestamps": [i / 30 for i in range(10)]}
+                 for cam in ("cam01", "cam02")}
+        with tempfile.TemporaryDirectory() as folder, \
+             patch("sync_review_gui.normalized_videos", return_value=({"session_id": "synthetic"}, files)), \
+             patch("sync_review_gui.suggested_reference", return_value="cam01"), \
+             patch("sync_review_gui.cv2.VideoCapture", SeekVideo):
+            gc.collect()
+            gc.disable()
+            try:
+                tkroot = tk.Tk()
+                tkroot.withdraw()
+                dialog = SyncReviewWindow(tkroot, Path(folder))
+                dialog._show("cam02", 4)
+                dialog.close()
+                tkroot.destroy()
+                refs = (weakref.ref(dialog), weakref.ref(tkroot))
+                del dialog, tkroot
+                self.assertEqual([ref() is None for ref in refs], [True, True])
+            finally:
+                gc.enable()
+                gc.collect()
 
     def test_negative_frame_index_rejected(self):
         with self.assertRaises(FrameReviewError):

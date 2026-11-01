@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
-from urllib.request import urlopen
 import webbrowser
-
+from pathlib import Path
+from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "viewer" / "dist"
@@ -84,6 +83,13 @@ def ensure_running() -> str:
 
 
 def main() -> int:
+    from runtime_config import retired_entrypoint
+    return retired_entrypoint("launch_motion_lab.py",
+        "It served the desktop viewer build statically with no /api/v1 backend and wrote launcher.log "
+        "into the installation directory.")
+
+
+def legacy_main() -> int:
     parser = argparse.ArgumentParser(description="Open KineLab PT Motion Lab")
     parser.add_argument("--no-browser", action="store_true", help="Start/verify without opening browser")
     args = parser.parse_args()
@@ -95,7 +101,7 @@ def main() -> int:
             if not webbrowser.open(url, new=2):
                 raise RuntimeError(f"Could not open browser. Visit {url} manually.")
         return 0
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - retired CLI boundary: any failure is logged, surfaced, returned as exit 1
         with LOG.open("a", encoding="utf-8") as log:
             log.write(f"Launcher error: {type(exc).__name__}: {exc}\n")
         if not args.no_browser and sys.platform == "win32":

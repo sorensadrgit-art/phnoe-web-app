@@ -74,19 +74,25 @@ For every proposed change: state need, current evidence, risk, files, plan, roll
 5. Submit a bounded P0/P1 plan with file-level change list, tests, rollback, risk and evidence; implement only the approved scope and checkpoint result.
 6. Report STATUS, BLOCKERS, SOURCE COMMIT, TEST LOGS, CHANGED FILES, PREVIEW URL (if any), and NEXT ACCEPTANCE GATE.
 
-## Local commands
+## Local commands (current candidate contract, 2026-10-29)
+Use the existing isolated environment. Choose unused output names for each run; do not overwrite `viewer/dist`, the accepted M1 archive, or another evidence run. Finish frontend edits before capturing inputs and keep them unchanged through packaging. The full candidate and clean-machine acceptance remain pending.
 ```powershell
 Set-Location 'C:\Users\soren\Documents\Projects\KineLab-PT-Production-Agent-Workspace'
 git status --short --branch
-npm --prefix viewer ci
+$env:PYTHONUTF8='1'
 npm --prefix viewer test
-npm --prefix viewer run build
-npm --prefix viewer run build:cloud
 # Use the isolated, preinstalled scientific environment in this workspace:
-& '.\.venv\Scripts\python.exe' -m unittest discover -s tests
-# From an ordinary desktop production build only:
-python tools\build_offline_distribution.py
+& '.\.venv\Scripts\python.exe' -X utf8 -B -m unittest discover -s tests
+# Three ordered steps; replace review-01 with a fresh run name:
+& '.\.venv\Scripts\python.exe' -X utf8 -B tools\build_offline_distribution.py --capture-frontend-inputs dist\candidate-inputs-review-01.json
+npm --prefix viewer run build -- --outDir ../dist/candidate-ui-review-01
+& '.\.venv\Scripts\python.exe' -X utf8 -B tools\build_offline_distribution.py --out dist\KineLabPT-candidate-review-01 --frontend-dist dist\candidate-ui-review-01 --frontend-inputs dist\candidate-inputs-review-01.json
+# Cloud demo verification uses its own output and is never the desktop package input:
+npm --prefix viewer run build:cloud -- --outDir ../dist/candidate-cloud-review-01
+# Supported launcher contract only; an actual preview needs a fresh test data root:
+& '.\.venv\Scripts\python.exe' -X utf8 -B t6_launcher.py --help
 ```
+The no-argument distribution builder is retired. `launch_kinelab_unified.py`, `launch_motion_lab.py`, `kinelab_hub.py`, and the `unified_service.py` CLI are retired entrypoints; use `t6_launcher.py` with an explicit fresh `--data-root` for isolated verification. Do not run the old desktop handoff packager: it targets the historical archive and Desktop destination. A source checkout test or package manifest does not prove installation on a clean Windows machine.
 The local checkout has its own isolated Python environment and synthetic/test-only fixtures (not copied patient datasets). Read `docs/BASELINE_QA_20261028.md` for the passing test recheck, prior intermittent Windows socket failure, and remaining release blockers. Never copy this developer environment blindly into a clean-machine release. Record blockers without modifying patient recordings.
 
 ## Agent collaboration

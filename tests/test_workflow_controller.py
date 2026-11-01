@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from session_library import SessionLibrary
 from session_contract import ROLES, sha256_file
-from workflow_controller import WorkflowController, WorkflowBlocked
+from session_library import SessionLibrary
+from workflow_controller import WorkflowBlocked, WorkflowController
 
 
 class WorkflowControllerTests(unittest.TestCase):
@@ -49,35 +49,23 @@ class WorkflowControllerTests(unittest.TestCase):
         self.register_fixture()
         with self.assertRaisesRegex(WorkflowBlocked, "preflight"):
             self.controller.plan("calibrate_pose")
-        with patch.object(self.controller, "_verify_preflight", return_value=None):
-            with self.assertRaisesRegex(WorkflowBlocked, "sync-observations"):
-                self.controller.plan("reconstruct")
+        with patch.object(self.controller, "_verify_preflight", return_value=None), self.assertRaisesRegex(WorkflowBlocked, "sync-observations"):
+            self.controller.plan("reconstruct")
 
     def test_export_refuses_unknown_or_unpassed_trc(self):
         self.register_fixture()
         with self.assertRaises(WorkflowBlocked):
             self.controller.plan("export_markers")
-        trc = self.project / "pose-3d" / "a_filt.trc"
-        trc.parent.mkdir(exist_ok=True)
-        trc.write_text("not a real trc")
-        registered = json.loads((self.project / "session.json").read_text())
-        required = ("calibration", "poseEstimation", "synchronization",
-                    "personAssociation", "triangulation", "filtering")
-        manifest = {
-            "schema": "kinelab.run.v1", "session_id": registered["session_id"],
-            "config_sha256": sha256_file(self.project / "Config.toml"),
-            "inputs": {role: value["sha256"] for role, value in registered["captures"].items()},
-            "stages": [{
-                "name": stage, "status": "failed" if stage == "filtering" else "passed",
-                "artifacts": [{"path": "pose-3d/a_filt.trc", "sha256": sha256_file(trc)}],
-                "quality": {"ok": True},
-            } for stage in required],
-        }
+        from native_evidence_fixture import complete_native_fixture
+        from test_export_motion import trc_text
+        path, trc, _ = complete_native_fixture(self.project, trc_text())
+        manifest = json.loads(path.read_text())
+        manifest["stages"][5]["status"] = "failed"
         (self.project / "run.json").write_text(json.dumps(manifest))
         with patch.object(self.controller, "_verify_preflight", return_value=None):
             with self.assertRaisesRegex(WorkflowBlocked, "passed"):
                 self.controller.plan("export_markers")
-            manifest["stages"][-1]["status"] = "passed"
+            manifest["stages"][5]["status"] = "passed"
             (self.project / "run.json").write_text(json.dumps(manifest))
             plan = self.controller.plan("export_markers")
             self.assertIn("--no-mot", plan.command)
@@ -91,22 +79,14 @@ class WorkflowControllerTests(unittest.TestCase):
 
     def test_missing_stage_quality_is_never_a_pass(self):
         self.register_fixture()
-        trc = self.project / "pose-3d" / "test_filt.trc"
-        trc.parent.mkdir(exist_ok=True)
-        trc.write_bytes(b"fixture")
-        session = json.loads((self.project / "session.json").read_text())
-        stages = ("calibration", "poseEstimation", "synchronization",
-                  "personAssociation", "triangulation", "filtering")
-        run = {"schema": "kinelab.run.v1", "session_id": "work-a",
-               "config_sha256": sha256_file(self.project / "Config.toml"),
-               "inputs": {role: item["sha256"] for role, item in session["captures"].items()},
-               "stages": [{"name": name, "status": "passed",
-                           "artifacts": [{"path": "pose-3d/test_filt.trc", "sha256": sha256_file(trc)}]}
-                          for name in stages]}
+        from native_evidence_fixture import complete_native_fixture
+        from test_export_motion import trc_text
+        path, _, _ = complete_native_fixture(self.project, trc_text())
+        run = json.loads(path.read_text())
+        run["stages"][0].pop("quality")
         (self.project / "run.json").write_text(json.dumps(run))
-        with patch.object(self.controller, "_verify_preflight", return_value=None):
-            with self.assertRaisesRegex(WorkflowBlocked, "quality"):
-                self.controller.plan("export_markers")
+        with patch.object(self.controller, "_verify_preflight", return_value=None), self.assertRaisesRegex(WorkflowBlocked, "quality"):
+            self.controller.plan("export_markers")
 
     def test_mixed_sample_fixture_never_passes_as_real(self):
         self.register_fixture()
@@ -176,9 +156,8 @@ class WorkflowControllerTests(unittest.TestCase):
         fake_ps.project = self.project
         with patch("workflow_controller.subprocess.Popen", return_value=process):
             self.controller.start("normalize")
-        with patch("workflow_controller.psutil.Process", return_value=fake_ps) as lookup:
-            with patch("workflow_controller.psutil.wait_procs", return_value=([fake_ps], [])):
-                message = self.controller.cancel_now()
+        with patch("workflow_controller.psutil.Process", return_value=fake_ps) as lookup, patch("workflow_controller.psutil.wait_procs", return_value=([fake_ps], [])):
+            message = self.controller.cancel_now()
         self.assertIn("cancel", message.lower())
         lookup.assert_called_once_with(9876)
         outcome = self.controller.poll()
@@ -189,6 +168,7 @@ class WorkflowControllerTests(unittest.TestCase):
     def test_real_child_process_cancel_does_not_touch_originals(self):
         import sys
         import time
+
         from workflow_controller import WorkflowPlan
         self.register_fixture()
         sleeper = Path(self.temp.name) / "safe-test-sleeper.py"
@@ -232,9 +212,8 @@ class WorkflowControllerTests(unittest.TestCase):
             self.controller.start("normalize")
         class Foreign:
             def cmdline(self): return ["notepad.exe", "somewhere-else.txt"]
-        with patch("workflow_controller.psutil.Process", return_value=Foreign()):
-            with self.assertRaisesRegex(WorkflowBlocked, "identity"):
-                self.controller.cancel_now()
+        with patch("workflow_controller.psutil.Process", return_value=Foreign()), self.assertRaisesRegex(WorkflowBlocked, "identity"):
+            self.controller.cancel_now()
         self.assertTrue((self.project / "workflow.lock").exists())
         self.controller._cleanup_lock()
 

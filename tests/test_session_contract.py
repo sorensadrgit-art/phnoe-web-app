@@ -2,10 +2,9 @@ import copy
 import hashlib
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLES = ("cam01_intrinsics", "cam02_intrinsics", "cam01_board", "cam02_board", "cam01_trial", "cam02_trial")
@@ -73,6 +72,15 @@ class SessionContractTests(unittest.TestCase):
         path.write_text('{"schema":"kinelab.session.v1","schema":"other"}', encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "SESSION_INVALID"):
             self.module.load_session(self.project)
+
+    def test_nonfinite_metadata_cannot_enter_registered_evidence(self):
+        path = self.project / "session.json"
+        for number in ("NaN", "Infinity", "-Infinity", "1e999"):
+            with self.subTest(number=number):
+                payload = json.dumps(self.session)[:-1] + ',"metadata":{"score":' + number + '}}'
+                path.write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "SESSION_INVALID"):
+                    self.module.load_session(self.project)
 
 
 if __name__ == "__main__":

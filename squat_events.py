@@ -10,11 +10,12 @@ Camera/image-plane knee angles and hip image displacement are heuristic only.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import math
+from datetime import UTC, datetime
+from itertools import pairwise
 from statistics import median
 
-from gait_events import validate_2d_trajectories, GaitEvidenceError
+from gait_events import EVIDENCE_CLASSIFICATION, GaitEvidenceError, validate_2d_trajectories
 
 SQUAT_ALGORITHM_VERSION = "kinelab-t5-squat-2d-phase-v1"
 FPS = 30
@@ -30,6 +31,14 @@ END_FLEX_DEGREES = 18.
 END_HIP_DROP = .14
 MIN_REP_DURATION = 20
 MAX_REP_DURATION = 240
+EXCLUSION_REASONS = ("no_person", "ambiguous_person", "low_score_or_occluded",
+                     "outside_image", "degenerate_geometry")
+UNSUPPORTED_SQUAT_METRICS = (
+    ("physical_knee_flexion_rom", "2D image-plane angle; no calibrated 3D sagittal-plane kinematics."),
+    ("squat_depth_meters", "Pelvis displacement is in torso-normalized image units, not meters."),
+    ("clinical_repetition_quality", "No validated scoring rubric or clinical reference."),
+    ("movement_velocity", "No physical scale; image-unit derivatives are not physical velocity."),
+)
 
 
 class SquatEvidenceError(ValueError):
@@ -60,18 +69,23 @@ def _feature(record,image_width,image_height):
             "left_knee_image_degrees":None,"right_knee_image_degrees":None,
             "hip_y_pixels":None,"torso_length_pixels":None,
             "flexion_image_degrees":None,"hip_descent_torso_units":None,
-            "phase":"unavailable","measured":False}
+            "phase":"unavailable","measured":False,
+            "unavailable_reason":None,"min_required_raw_score":None}
+    if record["people_detected"]>1:
+        return {**result,"unavailable_reason":"ambiguous_person"}
     if record["people_detected"]!=1 or scores is None or xy is None:
-        return result
+        return {**result,"unavailable_reason":"no_person"}
+    for idx in REQUIRED_INDICES:
+        if scores[idx]<CONFIDENCE_SCORE_THRESHOLD or xy[idx] is None:
+            return {**result,"unavailable_reason":"low_score_or_occluded"}
     for idx in REQUIRED_INDICES:
         point=xy[idx]
-        if (scores[idx]<CONFIDENCE_SCORE_THRESHOLD or point is None or
-                not (0 <= point[0] <= image_width and 0 <= point[1] <= image_height)):
-            return result
+        if not (0 <= point[0] <= image_width and 0 <= point[1] <= image_height):
+            return {**result,"unavailable_reason":"outside_image"}
     left=_angle(xy[11],xy[13],xy[15])
     right=_angle(xy[12],xy[14],xy[16])
     if left is None or right is None:
-        return result
+        return {**result,"unavailable_reason":"degenerate_geometry"}
     hips_y=(xy[11][1]+xy[12][1])/2
     shoulder_y=(xy[5][1]+xy[6][1])/2
     torso_len=math.hypot(
@@ -79,8 +93,9 @@ def _feature(record,image_width,image_height):
         shoulder_y-hips_y,
     )
     if not 12 <= torso_len <= max(image_width,image_height):
-        return result
+        return {**result,"unavailable_reason":"degenerate_geometry"}
     result.update(
+        min_required_raw_score=float(min(scores[idx] for idx in REQUIRED_INDICES)),
         knee_angle_image_degrees=round((left+right)/2,5),
         left_knee_image_degrees=round(left,5),
         right_knee_image_degrees=round(right,5),
@@ -210,6 +225,8 @@ def analyze_squats(
             elif phase=="ascending":
                 if flex<=END_FLEX_DEGREES and drop<=END_HIP_DROP:
                     if i-entry>=MIN_REP_DURATION and peak_flex>=BOTTOM_FLEX_DEGREES and peak_drop>=BOTTOM_HIP_DROP:
+                        span=features[entry:i+1]
+                        observed=[f["min_required_raw_score"] for f in span if f["measured"]]
                         reps.append({
                             "number":len(reps)+1,
                             "start_frame":entry,"bottom_frame":peak_frame,"end_frame":i,
@@ -220,6 +237,9 @@ def analyze_squats(
                             "peak_estimated_knee_flexion_degrees":round(peak_flex,3),
                             "peak_hip_descent_torso_units":round(peak_drop,4),
                             "classification":"2d_candidate_requires_human_review",
+                            "min_required_landmark_raw_score":min(observed),
+                            "unmeasured_frames_within_rep":len(span)-len(observed),
+                            "model_score_is_probability":False,
                         })
                     else:
                         incomplete+=1
@@ -236,6 +256,7 @@ def analyze_squats(
         "schema":"kinelab.2d-squat-candidates.v1",
         "algorithm_version":SQUAT_ALGORITHM_VERSION,
         "classification":"UNVALIDATED_2D_SQUAT_CANDIDATES",
+        "evidence_classification":EVIDENCE_CLASSIFICATION,
         "status":"CANDIDATES_PENDING_HUMAN_REVIEW" if reps else "NO_SQUAT_CANDIDATES",
         "role":role,"source_sha256":source_sha256,"test_only":True,
         "activity_assumption":"operator_confirmed_squat",
@@ -254,7 +275,13 @@ def analyze_squats(
             "missing_required_pose_frames":len(frames)-valid,
             "usable_smoothed_frames":smoothed,
             "usable_smoothed_fraction":smoothed/len(frames),
+            "exclusion_reasons":{reason:sum(f["unavailable_reason"]==reason for f in features)
+                                 for reason in EXCLUSION_REASONS},
         },
+        "unsupported_metrics":[
+            {"metric":name,"status":"UNSUPPORTED","value":None,"reason":reason}
+            for name,reason in UNSUPPORTED_SQUAT_METRICS
+        ],
         "count_is_clinically_validated":False,
         "score_interpretation":"Raw model score, not a probability; .43 is a heuristic threshold only.",
         "knee_angle_interpretation":"2D image-plane joint-angle estimate, NOT true sagittal-plane physical ROM.",
@@ -292,7 +319,7 @@ def make_manual_rep_reference(result,labels,*,reviewer,confirmed):
         known.add(key)
         cleaned.append({"start_frame":start,"bottom_frame":bottom,"end_frame":end})
     cleaned.sort(key=lambda x:x["start_frame"])
-    for earlier,later in zip(cleaned,cleaned[1:]):
+    for earlier,later in pairwise(cleaned):
         require(earlier["end_frame"]<later["start_frame"],
                 "Manually reviewed squat repetitions cannot overlap")
     return {
@@ -304,7 +331,7 @@ def make_manual_rep_reference(result,labels,*,reviewer,confirmed):
         "reviewer":reviewer.strip(),"operator_confirmed":True,
         "annotation_origin":"human_video_frame_review",
         "clinical_accuracy_validated":False,
-        "recorded_at_utc":datetime.now(timezone.utc).isoformat(),
+        "recorded_at_utc":datetime.now(UTC).isoformat(),
         "repetitions":cleaned,
     }
 
@@ -316,12 +343,16 @@ def compare_manual_reps(result,reference,tolerance_frames=3):
             and result.get("test_only") is True,
             "Unrecognized 2D squat candidate report")
     candidates=result["repetitions"]
+    provenance={"test_only":True,"evidence_classification":EVIDENCE_CLASSIFICATION}
     if reference is None:
         return {
             "status":"NO_HUMAN_REFERENCE","reference_count":0,
             "candidate_count":len(candidates),"matched_count":0,
             "precision":None,"recall":None,
-            "clinical_accuracy_validated":False,
+            "missed_reference_count":None,"false_candidate_count":None,
+            "unscorable_reference_count":None,
+            "incomplete_attempts":result.get("incomplete_attempts"),
+            "clinical_accuracy_validated":False,**provenance,
         }
     require(isinstance(reference,dict) and
             reference.get("schema")=="kinelab.manual-2d-squat-reference.v1" and
@@ -338,6 +369,9 @@ def compare_manual_reps(result,reference,tolerance_frames=3):
             "Manual reference belongs to a different, unconfirmed or falsely validated recording")
     refs=reference.get("repetitions")
     require(isinstance(refs,list) and 1<=len(refs)<=500,"Invalid human reference records")
+    features=result.get("frame_features")
+    require(isinstance(features,list) and len(features)==result["observed_frames"],
+            "Squat result lacks the per-frame source observations needed for scoring")
     observed=set()
     for mark in refs:
         require(isinstance(mark,dict),"Malformed human rep")
@@ -348,7 +382,7 @@ def compare_manual_reps(result,reference,tolerance_frames=3):
                 "Human reference frames invalid or duplicated")
         observed.add((start,bottom,end))
     ordered=sorted(refs,key=lambda mark:mark["start_frame"])
-    for first,second in zip(ordered,ordered[1:]):
+    for first,second in pairwise(ordered):
         require(first["end_frame"]<second["start_frame"],
                 "Manual observed squat repetitions overlap; cannot score this reference")
     options=[]
@@ -357,12 +391,35 @@ def compare_manual_reps(result,reference,tolerance_frames=3):
             dist=abs(ref["bottom_frame"]-pred["bottom_frame"])
             if dist<=tolerance_frames:
                 options.append((dist,i,j))
-    used_r,used_p=set(),set()
-    errors=[]
+    matched={}
+    used_p=set()
     for dist,i,j in sorted(options):
-        if i in used_r or j in used_p:
+        if i in matched or j in used_p:
             continue
-        used_r.add(i);used_p.add(j);errors.append(dist)
+        matched[i]=j
+        used_p.add(j)
+    pairs=[]
+    outcomes=[]
+    for i,ref in enumerate(refs):
+        if i in matched:
+            pred=candidates[matched[i]]
+            start_error=abs(pred["start_frame"]-ref["start_frame"])
+            end_error=abs(pred["end_frame"]-ref["end_frame"])
+            pairs.append({
+                "reference_index":i,"candidate_number":pred["number"],
+                "bottom_frame_error":abs(pred["bottom_frame"]-ref["bottom_frame"]),
+                "start_frame_error":start_error,"end_frame_error":end_error,
+                "phase_boundaries_within_tolerance":start_error<=tolerance_frames and end_error<=tolerance_frames,
+            })
+            outcome="matched"
+        elif all(f["measured"] for f in features[ref["start_frame"]:ref["end_frame"]+1]):
+            outcome="missed"
+        else:
+            # Unobserved source frames inside the reviewed span: detector could not run there.
+            outcome="unscorable_unobserved_source"
+        outcomes.append({**{k:ref[k] for k in ("start_frame","bottom_frame","end_frame")},"outcome":outcome})
+    errors=[pair["bottom_frame_error"] for pair in pairs]
+    false_candidates=[pred["number"] for j,pred in enumerate(candidates) if j not in used_p]
     return {
         "status":"EXPLORATORY_HUMAN_AGREEMENT_ONLY",
         "reference_count":len(refs),"candidate_count":len(candidates),
@@ -370,7 +427,13 @@ def compare_manual_reps(result,reference,tolerance_frames=3):
         "precision":len(errors)/len(candidates) if candidates else None,
         "recall":len(errors)/len(refs),
         "absolute_bottom_frame_errors":errors,
+        "matched_pairs":pairs,"reference_outcomes":outcomes,
+        "missed_reference_count":sum(o["outcome"]=="missed" for o in outcomes),
+        "unscorable_reference_count":sum(o["outcome"]=="unscorable_unobserved_source" for o in outcomes),
+        "false_candidate_count":len(false_candidates),"false_candidate_numbers":false_candidates,
+        "phase_boundary_disagreement_count":sum(not p["phase_boundaries_within_tolerance"] for p in pairs),
+        "incomplete_attempts":result.get("incomplete_attempts"),
         "tolerance_frames":tolerance_frames,
-        "clinical_accuracy_validated":False,
+        "clinical_accuracy_validated":False,**provenance,
         "interpretation":"Manual video annotation agreement, not instrumented or clinical squat accuracy.",
     }

@@ -6,19 +6,18 @@ existing results or treats a zero process exit alone as a quality pass.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import subprocess
-import sys
+from dataclasses import dataclass
+from pathlib import Path
 from uuid import uuid4
 
 import psutil
 
 from session_contract import load_session, sha256_file
 from session_library import SessionLibrary
+from take_acceptance import TakeAcceptanceError, checked_path
 
 ROOT = Path(__file__).resolve().parent
 ACTIONS = ("normalize", "calibrate_pose", "reconstruct", "export_markers")
@@ -50,10 +49,13 @@ class WorkflowController:
         supplied = Path(project)
         if supplied.is_symlink():
             raise WorkflowBlocked("Invalid session: symbolic links are not accepted")
-        self.project = supplied.resolve()
+        try:
+            self.project = checked_path(supplied).resolve()
+        except TakeAcceptanceError as error:
+            raise WorkflowBlocked("Invalid session: project path must be a plain non-link") from error
         self.library = SessionLibrary(self.project.parent)
         self.library.open_session(self.project.name)
-        self.process = None
+        self.process: subprocess.Popen[bytes] | None = None
         self.plan_active: WorkflowPlan | None = None
         self.log_path: Path | None = None
         self.cancel_requested = False
@@ -91,41 +93,13 @@ class WorkflowController:
             raise WorkflowBlocked("Verified preflight is invalid: " + str(error)) from error
 
     def _stage_status(self, stage_names: tuple[str, ...]):
-        record_path = self.project / "run.json"
+        from run_pipeline import STAGES, validate_run_evidence
         try:
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:
-            raise WorkflowBlocked("Passed native run.json is missing") from error
-        session = self._ensure_registered()
-        if (record.get("schema") != "kinelab.run.v1" or record.get("session_id") != session["session_id"]
-                or record.get("config_sha256") != sha256_file(self.project / "Config.toml")
-                or record.get("inputs") != {role: entry["sha256"] for role, entry in session["captures"].items()}):
-            raise WorkflowBlocked("Native run manifest belongs to changed or different recordings")
-        stages = record.get("stages", [])
-        if not isinstance(stages, list):
-            raise WorkflowBlocked("Invalid run manifest stages")
-        accepted = {}
-        for stage in stages:
-            if not isinstance(stage, dict):
-                continue
-            name = stage.get("name")
-            if name not in stage_names:
-                continue
-            if stage.get("status") != "passed" or not stage.get("artifacts"):
-                raise WorkflowBlocked("Required stage not passed: " + str(name))
-            if not isinstance(stage.get("quality"), dict) or stage["quality"].get("ok") is not True:
-                raise WorkflowBlocked("Required native stage quality is missing or rejected: " + str(name))
-            for item in stage["artifacts"]:
-                relative = Path(item.get("path", ""))
-                artifact = (self.project / relative).resolve()
-                if relative.is_absolute() or not artifact.is_relative_to(self.project) or not artifact.is_file():
-                    raise WorkflowBlocked("Stage artifact missing or escaped session")
-                if sha256_file(artifact) != item.get("sha256"):
-                    raise WorkflowBlocked("Stage output no longer matches recorded hash")
-            accepted[name] = stage
-        if set(accepted) != set(stage_names):
-            raise WorkflowBlocked("Required passed stages missing: " + ", ".join(set(stage_names) - set(accepted)))
-        return accepted
+            through = max(stage_names, key=STAGES.index)
+            verified = validate_run_evidence(self.project, through)
+            return {name: verified["stages"][name] for name in stage_names}
+        except (ValueError, OSError, KeyError) as error:
+            raise WorkflowBlocked(str(error)) from error
 
     def plan(self, action: str) -> WorkflowPlan:
         if action not in ACTIONS:

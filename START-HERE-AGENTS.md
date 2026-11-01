@@ -1,5 +1,7 @@
 # KineLab PT — Start Here (Codex and Antigravity)
 
+**Current handoff (2026-11-01):** Read `docs/implementation/CONTEXT_TRANSFER_20261101.md` and `docs/implementation/GITHUB_HANDOFF_20261101.md` before resuming any coding, restarting stopped agents, or updating acceptance claims. The repository is not clinically or production approved. Work from a separate child branch and confirm no concurrent writer.
+
 This is the **isolated engineering workspace**. Your existing Windows app is separate and has not been replaced.
 
 ## Where the project is

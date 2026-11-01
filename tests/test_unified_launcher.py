@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from launch_kinelab_unified import find_free_port, read_state, write_state, PORTS
+from launch_kinelab_unified import PORTS, find_free_port, read_state, write_state
 
 
 class UnifiedLauncherTests(unittest.TestCase):

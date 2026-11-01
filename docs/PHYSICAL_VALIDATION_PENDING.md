@@ -1,7 +1,7 @@
 # KineLab PT — Physical & Clinical Validation Status
 
 ## Status Declaration
-- **Software Build Status**: `SOFTWARE_BUILD_VERIFIED`
+- **Software Build Status**: `SOFTWARE_BUILD_VERIFIED` applies only to the exact artifacts and scoped checks cited in `implementation/VERIFICATION_LOG.md`. Current whole-candidate integration, browser, package and clean-machine acceptance remain pending.
 - **Physical Research Validation**: `BLOCKED_ON_PHYSICAL_EVIDENCE`
 - **Clinical Validation**: `UNVERIFIED`
 
@@ -17,7 +17,12 @@ It MUST NOT be used for primary medical diagnosis, patient surgical planning, or
 
 ## 2. Inventory of Missing Physical Evidence (Blockers)
 
-While all software modules, test suites, algorithms, and packaging are verified and passing, end-to-end scientific validation is pending the collection of physical laboratory evidence:
+Software verification is incomplete. Use the dated integration checkpoint in `implementation/FINAL_ENGINEERING_ACCEPTANCE_REPORT.md` for observed passes, failures and checks not run. Physical evidence requires a separately approved privacy, consent, physical-validation and clinical-use protocol; this document does not authorize participant recording.
+
+### Software boundary: source-frame and capture-extent binding
+- Reconstruction currently assesses the unfiltered TRC row envelope. Complete leading and trailing capture coverage, canonical time-to-frame mapping and agreement of the two associated-camera extents are not yet verified.
+- Frame diagnostics explicitly label equality between the associated-pose index and decoded source-video frame as `UNVERIFIED`. Synthetic geometry fixtures cannot establish real synchronization, physical scale or clinical accuracy.
+- The historical recording inventory below was not accessed or reverified during the isolated engineering work; it is not current evidence of available or approved source data.
 
 ### Blocker 1: Missing Camera 1 (Phone) Physical Video
 - **Current State**:
@@ -43,7 +48,7 @@ While all software modules, test suites, algorithms, and packaging are verified 
 
 ### Blocker 4: Optical Motion Capture Ground-Truth Comparison
 - **Current State**:
-  Pose2Sim and OpenSim inverse kinematics pipelines operate deterministically and pass all numerical unit tests.
+  Scoped software fixtures exist; their exact commands and outcomes are recorded in `implementation/VERIFICATION_LOG.md`. Full current-tree native, clean-machine and physical validation remain pending.
 - **Blocker Detail**:
   Markerless 3D joint centers have not yet been validated against a gold-standard optical marker system (e.g., Vicon, Qualisys, or OptiTrack) with synchronized force plates to quantify kinematic accuracy (mean absolute error in degrees across sagittal, frontal, and transverse planes).
 

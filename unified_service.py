@@ -5,27 +5,36 @@ Reuses existing capture/session/processing quality gates; not a clinical tool.
 A localhost access key does not protect against other local same-user software.
 """
 from __future__ import annotations
+
 import argparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urlsplit, unquote
-from uuid import uuid4
-from mimetypes import guess_type
+import hashlib
 import json
 import os
 import secrets
+import stat
 import subprocess
-import sys
 import threading
+from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from mimetypes import guess_type
+from pathlib import Path
+from typing import ClassVar
+from urllib.parse import parse_qs, unquote, urlsplit
+from uuid import uuid4
 
-from capture_station import RAW_ROLES, RECOMMENDED_SECONDS, ffmpeg_command, import_phone_mp4
-from capture_station import prepare_recording, finalize_recording, save_board_measurement
-from session_library import SessionLibrary, SessionError
-from sync_evidence import save_sync, SyncEvidenceError
-from workflow_controller import WorkflowController, WorkflowBlocked
-from workflow_recovery import inspect_recovery
-from squat_events import analyze_squats, SquatEvidenceError
+from capture_station import (
+    PARTICIPANT_RECORDING_BLOCKED,
+    RAW_ROLES,
+    finalize_recording,
+    import_phone_mp4,
+    save_board_measurement,
+)
 from kinelab_hub import launch_shortcut
+from session_library import SessionError, SessionLibrary
+from squat_events import SquatEvidenceError, analyze_squats
+from sync_evidence import SyncEvidenceError, save_sync
+from workflow_controller import ACTIONS, WorkflowBlocked, WorkflowController
+from workflow_recovery import inspect_recovery
 
 ROOT=Path(__file__).resolve().parent
 DIST=ROOT/"viewer"/"dist"
@@ -58,6 +67,192 @@ class AppError(ValueError):
         self.status=status
 
 
+class WorkflowJobJournal:
+    """Append-only observations, never authority to adopt or replay a process.
+
+    Each exclusive numbered event is flushed before acknowledgement. A partial
+    event is retained and blocks further starts; no in-place repair is attempted.
+    Callers serialize their own requests; exclusive generation creation also
+    rejects competing service instances. This is not a native process supervisor.
+    """
+    ACTIVE: ClassVar[set[str]] = {"starting", "running", "interrupted"}
+    TERMINAL: ClassVar[set[str]] = {"passed", "failed", "cancelled", "cancelled-after-action"}
+
+    def __init__(self, project, owner_id):
+        self.project = Path(project)
+        self.owner_id = owner_id
+        self.directory = self.project / "workflow-journal"
+        self.operation_id = None
+
+    @staticmethod
+    def _safe(path):
+        for item in (path, *path.parents):
+            try:
+                info = item.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise AppError("Job recovery required: linked journal or source", 409)
+
+    @staticmethod
+    def _digest(value):
+        raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()
+
+    def _identity(self):
+        identity = {}
+        for name in ("Config.toml", "session.json"):
+            path = self.project / name
+            self._safe(path)
+            if path.is_file():
+                if path.stat().st_size > JSON_LIMIT:
+                    raise AppError("Job recovery required: source identity exceeds limit", 409)
+                identity[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return identity
+
+    def _read(self):
+        self._safe(self.directory)
+        if not self.directory.exists():
+            return []
+        files = sorted(self.directory.iterdir())
+        if len(files) > 10000 or not files:
+            raise AppError("Job recovery required: incomplete journal", 409)
+        events = []
+        previous = None
+        for generation, path in enumerate(files, 1):
+            self._safe(path)
+            if path.name != f"{generation:08d}.json" or not path.is_file() or path.stat().st_size > 16384:
+                raise AppError("Job recovery required: journal generation gap or invalid entry", 409)
+            raw = path.read_bytes()
+            event = json.loads(raw)
+            if not isinstance(event, dict):
+                raise AppError("Job recovery required: invalid journal entry", 409)
+            digest = event.get("sha256")
+            payload = {key: value for key, value in event.items() if key != "sha256"}
+            canonical = json.dumps(event, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8") + b"\n"
+            if (raw != canonical or digest != self._digest(payload)
+                    or event.get("schema") != "kinelab.workflow-job.v1"
+                    or event.get("session_id") != self.project.name
+                    or event.get("generation") != generation
+                    or event.get("previous_sha256") != previous
+                    or event.get("action") not in ACTIONS
+                    or event.get("state") not in self.ACTIVE | self.TERMINAL
+                    or not isinstance(event.get("owner_id"), str)
+                    or not isinstance(event.get("operation_id"), str)
+                    or len(event["operation_id"]) != 32):
+                raise AppError("Job recovery required: corrupt journal identity or hash", 409)
+            if events:
+                prior = events[-1]
+                same = event["operation_id"] == prior["operation_id"]
+                if (same and (event["owner_id"] != prior["owner_id"]
+                              or event["action"] != prior["action"]
+                              or event["source_identity"] != prior["source_identity"]
+                              or prior["state"] in self.TERMINAL)
+                        or not same and (prior["state"] not in self.TERMINAL or event["state"] != "starting")):
+                    raise AppError("Job recovery required: invalid operation transition", 409)
+            elif event["state"] != "starting":
+                raise AppError("Job recovery required: missing initial operation", 409)
+            events.append(event)
+            previous = digest
+        if events[-1].get("source_identity") != self._identity():
+            raise AppError("Job recovery required: source identity changed", 409)
+        return events
+
+    def _blocked(self, message, event=None):
+        event = event or {}
+        return {"state": "recovery-required", "action": event.get("action"), "passed": False,
+                "message": message, "recovery_required": True, "session_id": self.project.name,
+                "operation_id": event.get("operation_id"), "generation": event.get("generation"),
+                "log_available": bool(event.get("log_file"))}
+
+    def status(self):
+        try:
+            events = self._read()
+            event = events[-1] if events else None
+            locks = any((self.project / name).exists() or (self.project / name).is_symlink()
+                        for name in ("workflow.lock", "run.lock"))
+            if event and event["state"] in self.ACTIVE:
+                return self._blocked("Job recovery required: previous work may still be running; inspect its evidence and ownership before any retry", event)
+            if locks or not event and (any((self.project / name).exists() for name in
+                    ("run.json", "normalization.json", "preflight.json"))
+                    or any(self.project.glob("workflow-*.log"))):
+                return self._blocked("Job recovery required: native evidence has no safely owned active worker", event)
+            if event:
+                state = "completed-unverified" if event["state"] == "passed" else event["state"]
+                return {"state": state, "action": event["action"], "passed": False,
+                        "message": "Recorded prior outcome; artifacts have not been revalidated in this instance",
+                        "recovery_required": False, "operation_id": event["operation_id"],
+                        "session_id": self.project.name, "generation": event["generation"],
+                        "log_available": bool(event.get("log_file"))}
+            return {"state": "idle", "action": None, "passed": False,
+                    "message": "No recorded operation or native evidence", "recovery_required": False,
+                    "operation_id": None, "session_id": self.project.name, "generation": 0}
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            # Do not expose exception paths or silently repair malformed history.
+            message = str(error) if isinstance(error, AppError) else "Job recovery required: unreadable or corrupt journal"
+            return self._blocked(message)
+
+    def _append(self, action, state, operation_id, *, log_file=None):
+        events = self._read()
+        prior = events[-1] if events else None
+        if state == "starting" and prior and prior["state"] not in self.TERMINAL:
+            raise AppError("Job recovery required: another operation already owns this generation", 409)
+        if state != "starting" and (not prior or prior["operation_id"] != operation_id
+                or prior["owner_id"] != self.owner_id or prior["state"] in self.TERMINAL):
+            raise AppError("Job recovery required: operation ownership changed", 409)
+        event = {"schema": "kinelab.workflow-job.v1", "generation": len(events) + 1,
+                 "previous_sha256": prior["sha256"] if prior else None,
+                 "session_id": self.project.name, "operation_id": operation_id,
+                 "owner_id": self.owner_id, "action": action, "state": state,
+                 "source_identity": self._identity(), "log_file": log_file,
+                 "recorded_at": datetime.now(UTC).isoformat()}
+        event["sha256"] = self._digest(event)
+        self._safe(self.directory)
+        self.directory.mkdir(exist_ok=True)
+        path = self.directory / f"{event['generation']:08d}.json"
+        with path.open("xb") as stream:
+            stream.write(json.dumps(event, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8") + b"\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        return event
+
+    def begin(self, action):
+        state = self.status()
+        if state["recovery_required"]:
+            raise AppError(state["message"], 409)
+        if action not in ACTIONS:
+            raise AppError("Unknown workflow action", 400)
+        operation_id = uuid4().hex
+        event = self._append(action, "starting", operation_id)
+        self.operation_id = operation_id
+        return event
+
+    def observe(self, status):
+        events = self._read()
+        event = events[-1] if events else None
+        if (not event or event["operation_id"] != self.operation_id
+                or event["owner_id"] != self.owner_id or status.action != event["action"]
+                or status.state not in self.ACTIVE | self.TERMINAL):
+            raise AppError("Job recovery required: observation does not own this operation", 409)
+        if event["state"] == "interrupted":
+            return self._blocked("Job recovery required: owner declared interruption", event)
+        if event["state"] != status.state:
+            event = self._append(status.action, status.state, self.operation_id,
+                                 log_file=status.log_path.name if status.log_path else None)
+        return {"state": status.state, "action": status.action, "passed": status.passed,
+                "message": status.message, "log_available": bool(status.log_path),
+                "operation_id": event["operation_id"], "session_id": self.project.name,
+                "generation": event["generation"], "recovery_required": False}
+
+    def interrupt(self):
+        events = self._read()
+        event = events[-1] if events else None
+        if (event and event["operation_id"] == self.operation_id
+                and event["owner_id"] == self.owner_id and event["state"] in {"starting", "running"}):
+            self._append(event["action"], "interrupted", self.operation_id, log_file=event.get("log_file"))
+        return self.status()
+
+
 def _safe_session(item):
     return {k:item[k] for k in
             ("id","kind","status","captured_roles","total_roles","can_register","has_board_measurement")
@@ -81,6 +276,8 @@ class AppCore:
         self.token=token or secrets.token_urlsafe(32)
         self.mutex=threading.RLock()
         self.jobs={}
+        self.job_journals={}
+        self.instance_id=uuid4().hex
         self.recording=None
 
     def session(self,id):
@@ -148,11 +345,10 @@ class AppCore:
     def report(self,id,name):
         with self.mutex:
             path=self.session(id)
-            if name not in REPORT_FILES:
-                if not(name.startswith("exports/") and name.endswith(".motion.json")
-                       and name.count("/")==1 and
-                       name.split("/")[-1].replace(".","").replace("_","").replace("-","").isalnum()):
-                    raise AppError("Only approved session JSON reports may be opened",400)
+            if name not in REPORT_FILES and not(name.startswith("exports/") and name.endswith(".motion.json")
+                    and name.count("/")==1 and
+                    name.split("/")[-1].replace(".","").replace("_","").replace("-","").isalnum()):
+                raise AppError("Only approved session JSON reports may be opened",400)
             target=_contained(path,path/name)
             if not target.is_file():raise AppError("Approved report is absent",404)
             if target.stat().st_size>JSON_LIMIT:raise AppError("Report exceeds bounded size limit",409)
@@ -170,15 +366,23 @@ class AppCore:
 
     def job(self,id):
         with self.mutex:
-            self.session(id)
+            journal=self._job_journal(id)
             worker=self.jobs.get(id)
             if worker is None:
-                return {"job":{"state":"idle","action":None,"passed":False,
-                               "message":"No action started in this app instance"}}
+                return {"job":journal.status()}
             state=worker.poll()
-            return {"job":{"state":state.state,"action":state.action,
-                           "passed":state.passed,"message":state.message,
-                           "log_available":bool(state.log_path)}}
+            return {"job":journal.observe(state)}
+
+    def _job_journal(self,id):
+        project=self.session(id)
+        if id not in self.job_journals:
+            self.job_journals[id]=WorkflowJobJournal(project,self.instance_id)
+        return self.job_journals[id]
+
+    def interrupt_jobs(self):
+        """Persist uncertainty only; native processes are not stopped or adopted."""
+        with self.mutex:
+            return [journal.interrupt() for journal in self.job_journals.values()]
 
     def job_start(self,id,action,confirmed):
         if confirmed is not True:raise AppError("Operator must confirm native processing",409)
@@ -186,14 +390,27 @@ class AppCore:
             if self._record_status()["state"]=="running":
                 raise AppError("Finish webcam recording before native processing",409)
             prev=self.jobs.get(id)
-            if prev and prev.poll().state=="running":
-                raise AppError("Native processing already active",409)
+            journal=self._job_journal(id)
+            if prev:
+                previous=prev.poll()
+                journal.observe(previous)
+                if previous.state=="running":
+                    raise AppError("Native processing already active",409)
+            if journal.status()["recovery_required"]:
+                raise AppError("Job recovery required before native processing",409)
             worker=WorkflowController(self.session(id))
             plan=worker.plan(action)
-            status=worker.start(action)
+            journal.begin(action)
             self.jobs[id]=worker
-            return {"job":{"state":status.state,"action":action,
-                           "passed":False,"message":plan.description}}
+            try:
+                status=worker.start(action)
+            except BaseException:
+                journal.interrupt()
+                self.jobs.pop(id,None)
+                raise
+            result=journal.observe(status)
+            result["message"]=plan.description
+            return {"job":result}
 
     def job_cancel(self,id,confirmed):
         if confirmed is not True:raise AppError("Explicit process stop confirmation required",409)
@@ -236,22 +453,7 @@ class AppCore:
 
     def record_start(self,id,role,seconds,confirmed):
         if confirmed is not True:raise AppError("Explicit webcam consent required",409)
-        with self.mutex:
-            if self._record_status()["state"]=="running":
-                raise AppError("A webcam recording is already active",409)
-            for worker in self.jobs.values():
-                if worker.poll().state=="running":
-                    raise AppError("Finish native processing before recording",409)
-            project=self.editable(id)
-            duration=seconds if seconds is not None else RECOMMENDED_SECONDS.get(role)
-            _,partial=prepare_recording(project,role,duration)
-            with (project/"capture-station.log").open("ab") as log:
-                proc=subprocess.Popen(ffmpeg_command(partial,duration),
-                    stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=log,
-                    cwd=str(ROOT),creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
-            self.recording={"process":proc,"id":id,"role":role,"project":project}
-            return {"recording":{"state":"running","session":id,"role":role,
-                                 "seconds":duration}}
+        raise AppError(PARTICIPANT_RECORDING_BLOCKED,409)
 
     def record_stop(self,confirmed):
         if confirmed is not True:raise AppError("Explicit camera stop confirmation required",409)
@@ -266,6 +468,7 @@ class AppCore:
             return {"message":"Stop sent; completed MP4 will publish only after FFprobe verification."}
 
     def upload(self,id,role,stream,length,confirmed):
+        if role=="cam01_trial":raise AppError(PARTICIPANT_RECORDING_BLOCKED,409)
         if confirmed is not True:raise AppError("Confirm importing local phone MP4",409)
         if role not in ("cam01_intrinsics","cam01_board","cam01_trial"):
             raise AppError("Only three phone MP4 roles can be imported",400)
@@ -399,7 +602,7 @@ def make_handler(core):
                 n=int(self.headers.get("Content-Length","0"))
                 if n<1 or n>JSON_LIMIT:raise ValueError
                 data=json.loads(self.rfile.read(n))
-                if not isinstance(data,dict):raise ValueError
+                if not isinstance(data,dict):raise TypeError
                 return data
             except (ValueError,UnicodeError,TypeError):
                 raise AppError("Malformed or oversized JSON body",400)
@@ -497,6 +700,8 @@ def make_handler(core):
             if data.get("confirmed") is not True:
                 raise AppError("Explicit legacy-tool launch confirmation required",409)
             key=data.get("key")
+            if key == "capture":
+                raise AppError(PARTICIPANT_RECORDING_BLOCKED,409)
             if key not in ("capture","motion","gait","tracking","caliscope","pose","mixed"):
                 raise AppError("Invalid legacy launcher",400)
             launch_shortcut(key)
@@ -513,6 +718,13 @@ def make_server(core,host="127.0.0.1",port=0):
 
 
 def main():
+    from runtime_config import retired_entrypoint
+    return retired_entrypoint("unified_service.py",
+        "Its standalone server exposes the obsolete /api routes with X-KineLab-Key over the "
+        "in-installation projects directory; t6_service.py imports it only as a library.")
+
+
+def legacy_main():
     parser=argparse.ArgumentParser(description="KineLab PT offline unified local service")
     parser.add_argument("--port",type=int,required=True)
     parser.add_argument("--key",type=str,required=True)
@@ -527,4 +739,4 @@ def main():
 
 
 if __name__=="__main__":
-    main()
+    raise SystemExit(main())

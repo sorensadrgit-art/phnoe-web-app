@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import argparse
-from bisect import bisect_left
 import hashlib
 import json
 import math
 import os
-from pathlib import Path
 import re
+import sqlite3
 import tempfile
+from bisect import bisect_left
+from itertools import pairwise
+from pathlib import Path
 
 SEGMENTS = [
     ("Hip", "RHip"), ("RHip", "RKnee"), ("RKnee", "RAnkle"), ("RAnkle", "RHeel"),
@@ -65,7 +67,7 @@ def positive_int(value, code, *, minimum=1):
 def series_times(times, code):
     if not times or any(not finite(t) for t in times):
         fail(code, "Empty or nonfinite timestamps")
-    if any(b <= a for a, b in zip(times, times[1:])):
+    if any(b <= a for a, b in pairwise(times)):
         fail(code, "Timestamps must strictly increase")
 
 
@@ -215,7 +217,7 @@ def parse_mot(path):
 
 
 def time_tolerance(frames, fps):
-    return min((b["t"] - a["t"] for a, b in zip(frames, frames[1:])), default=1 / fps)
+    return min((b["t"] - a["t"] for a, b in pairwise(frames)), default=1 / fps)
 
 
 def validate_coverage(frames, kin, fps):
@@ -297,16 +299,11 @@ def sha256_file(path):
 
 
 def load_json(path):
-    # Duplicate keys must not hide an invalid declaration.
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                fail("ARTIFACT_MISMATCH", "Duplicate JSON key")
-            result[key] = value
-        return result
-    return json.loads(Path(path).read_text(encoding="utf-8-sig"), object_pairs_hook=unique,
-                      parse_constant=lambda _: fail("ARTIFACT_MISMATCH", "Nonfinite JSON number"))
+    from session_contract import strict_json_loads
+    try:
+        return strict_json_loads(Path(path).read_text(encoding="utf-8-sig"))
+    except ValueError as error:
+        fail("ARTIFACT_MISMATCH", str(error))
 
 
 def bound_path(root, relative):
@@ -322,13 +319,26 @@ def bound_path(root, relative):
 
 
 def bind_run(manifest, trc, mot):
-    manifest = Path(manifest).resolve()
+    from take_acceptance import TakeAcceptanceError, checked_path
+    try:
+        manifest = checked_path(manifest).resolve()
+        trc = checked_path(trc)
+        mot = checked_path(mot) if mot is not None else None
+    except TakeAcceptanceError as error:
+        fail("ARTIFACT_MISMATCH", "Explicit export path must be a plain non-link: " + str(error))
     root = manifest.parent
     before = sha256_file(manifest)
     run = load_json(manifest)
     # The shared session contract owns all six source hashes and safe role paths.
     from session_contract import load_session
     session = load_session(root)
+    from run_pipeline import validate_run_evidence
+    try:
+        verified = validate_run_evidence(root, "kinematics" if mot else "filtering", session=session)
+    except (ValueError, OSError) as error:
+        fail("ARTIFACT_MISMATCH", str(error))
+    if verified["run"] != run:
+        fail("ARTIFACT_MISMATCH", "Run manifest changed during validation")
     if (not isinstance(run, dict) or run.get("schema") != "kinelab.run.v1"
             or run.get("session_id") != session["session_id"]
             or run.get("config_sha256") != sha256_file(root / "Config.toml")
@@ -398,12 +408,42 @@ def motion(trc, mot=None, *, run_manifest=None):
                   if not binding else "Quality status reflects recorded passed stages, not clinical validation."],
         **binding,
     }
-    if binding:
-        if (sha256_file(trc) != binding["provenance"]["trcSha256"]
-                or mot and sha256_file(mot) != binding["provenance"]["motSha256"]
-                or sha256_file(run_manifest) != binding["provenance"]["runManifestSha256"]):
-            fail("ARTIFACT_MISMATCH", "Inputs/manifest changed while parsing")
+    if binding and (sha256_file(trc) != binding["provenance"]["trcSha256"]
+            or mot and sha256_file(mot) != binding["provenance"]["motSha256"]
+            or sha256_file(run_manifest) != binding["provenance"]["runManifestSha256"]):
+        fail("ARTIFACT_MISMATCH", "Inputs/manifest changed while parsing")
     return validate_motion(data)
+
+
+def load_verified_motion(project, path):
+    """Verify served frame values against their immutable native source inputs."""
+    project, path = Path(project).resolve(), Path(path)
+    try:
+        if path.is_symlink() or not path.resolve().is_relative_to(project):
+            raise ValueError("motion path outside session")
+        data = validate_motion(load_json(path))
+        if data["schema"] != "kinelab.motion.v2":
+            from session_library import _read_json, _test_only
+            kind = (_read_json(project / "session-template.json") or {}).get("kind")
+            if not _test_only(project) and kind != "demo":
+                raise ValueError("unbound exploratory data cannot enter measured session")
+            return data
+        run = load_json(project / "run.json")
+        provenance = data["provenance"]
+        def source(stages, digest):
+            matches = [bound_path(project, artifact["path"]) for stage in run["stages"]
+                       if stage["name"] in stages for artifact in stage["artifacts"] if artifact["sha256"] == digest]
+            if len(matches) != 1:
+                raise ValueError("source binding missing or ambiguous")
+            return matches[0]
+        trc = source(("filtering", "markerAugmentation"), provenance["trcSha256"])
+        mot = source(("kinematics",), provenance["motSha256"]) if provenance["motSha256"] else None
+        expected = motion(trc, mot, run_manifest=project / "run.json")
+        if data != expected:
+            raise ValueError("export values differ from bound source revision")
+        return data
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ValueError("EVIDENCE_INVALID: " + str(error)) from error
 
 
 def latest(folder, glob):
@@ -428,12 +468,204 @@ def write_motion(out, data):
             temporary.unlink(missing_ok=True)
 
 
+
+def _bounded_export_sha256(path: Path, expected_size: int) -> str:
+    """Hash exactly the intended output bytes; refuse aliases, growth or replacement."""
+    import stat
+
+    from take_acceptance import checked_path
+
+    path = checked_path(path)
+    before = path.stat(follow_symlinks=False)
+    def identity(item):
+        return (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_mode)
+    if not stat.S_ISREG(before.st_mode) or before.st_size != expected_size:
+        raise ValueError("EXPORT_OUTPUT_CHANGED")
+    digest = hashlib.sha256()
+    count = 0
+    with path.open("rb") as stream:
+        if identity(os.fstat(stream.fileno())) != identity(before):
+            raise ValueError("EXPORT_OUTPUT_CHANGED")
+        while count <= expected_size:
+            block = stream.read(min(1024 * 1024, expected_size + 1 - count))
+            if not block:
+                break
+            count += len(block)
+            digest.update(block)
+        if count != expected_size or identity(os.fstat(stream.fileno())) != identity(before):
+            raise ValueError("EXPORT_OUTPUT_CHANGED")
+    if identity(path.stat(follow_symlinks=False)) != identity(before):
+        raise ValueError("EXPORT_OUTPUT_CHANGED")
+    checked_path(path)
+    return digest.hexdigest()
+
+
+
+def _require_closed_motion_exports(index, session_id: str) -> None:
+    """An unresolved intent cannot be bypassed by choosing another output filename."""
+    pending = {}
+    for row in index.conn.execute(
+            "SELECT event_id,event_type,details_json FROM audit_events "
+            "WHERE session_id=? AND event_type IN (?,?) ORDER BY id",
+            (session_id, "motion_export_started", "motion_export_published")):
+        details = json.loads(row["details_json"])
+        if (not isinstance(details, dict)
+                or details.get("schema") != "kinelab.motion-export-audit.v1"
+                or details.get("session_id") != session_id
+                or not isinstance(details.get("operation_id"), str)
+                or re.fullmatch(r"[0-9a-f]{32}", details["operation_id"]) is None):
+            raise ValueError("EXPORT_AUDIT_UNAVAILABLE")
+        operation = details["operation_id"]
+        if row["event_type"] == "motion_export_started":
+            if operation in pending:
+                raise ValueError("EXPORT_AUDIT_UNAVAILABLE")
+            pending[operation] = (row["event_id"], details)
+        else:
+            prior = pending.pop(operation, None)
+            if prior is None or details != {**prior[1], "started_event_id": prior[0]}:
+                raise ValueError("EXPORT_AUDIT_UNAVAILABLE")
+    if pending:
+        raise ValueError("EXPORT_PENDING_PUBLICATION")
+
+def _publish_audited_motion(project: Path, trc: Path, mot: Path | None,
+                            manifest: Path, out: Path, data_root: Path | None) -> dict:
+    """Native-v2 publication: existing index only, durable intent, then exact-byte receipt.
+
+    An interrupted publication is retained, never rolled back or silently healed.
+    This does not authenticate the operator or establish physical/clinical validity.
+    """
+    from uuid import uuid4
+
+    from runtime_config import resolve_data_root
+    from session_contract import load_session
+    from session_index import SessionIndex
+    from session_metadata_revision import read_metadata_state
+    from take_acceptance import acceptance_lease, checked_path, local_path
+
+    project = checked_path(project)
+    root = resolve_data_root(data_root if data_root is not None else project.parent)
+    if project.parent != root:
+        raise ValueError("EXPORT_INDEX_ROOT_MISMATCH")
+    database = local_path(root, ".kinelab_index.db")
+    if not database.is_file():
+        raise ValueError("EXPORT_INDEX_REQUIRED")
+    manifest = checked_path(manifest)
+    if manifest.parent != project:
+        raise ValueError("EXPORT_SESSION_MISMATCH")
+    out = checked_path(out)
+    if out.parent != local_path(project, "exports") or not out.name.endswith(".motion.json"):
+        raise ValueError("EXPORT_OUTPUT_LOCATION")
+    if out.exists():
+        raise ValueError("OUTPUT_EXISTS")
+    operation_id = uuid4().hex
+    # This is the same cooperative OS lease used by capture acceptance/metadata edits.
+    with acceptance_lease(project):
+        index = SessionIndex(database, root, existing_only=True)
+        try:
+            session = load_session(project)
+            session_id = session["session_id"]
+            if session_id != project.name:
+                raise ValueError("EXPORT_SESSION_MISMATCH")
+            with index.transaction():
+                state = read_metadata_state(index, session_id)
+                if state["status"] != "AVAILABLE":
+                    raise ValueError("EXPORT_CONTEXT_UNAVAILABLE")
+                _require_closed_motion_exports(index, session_id)
+                data = motion(trc, mot, run_manifest=manifest)
+                if data["schema"] != "kinelab.motion.v2" or data["sessionId"] != session_id:
+                    raise ValueError("EXPORT_SESSION_MISMATCH")
+                raw = json.dumps(data, allow_nan=False, separators=(",", ":")).encode("utf-8")
+                output_sha256 = hashlib.sha256(raw).hexdigest()
+                details = {
+                    "schema": "kinelab.motion-export-audit.v1",
+                    "operation_id": operation_id,
+                    "session_id": session_id,
+                    "origin": state["origin"],
+                    "metadata_context_sha256": state["context_sha256"],
+                    "native_provenance": data["provenance"],
+                    "output": {"path": out.relative_to(project).as_posix(),
+                               "sha256": output_sha256, "bytes": len(raw)},
+                    "motion_schema": data["schema"],
+                    "units": data["units"], "coordinate_system": data["coordinateSystem"],
+                    "operator_authentication": "UNVERIFIED",
+                    "physical_validation": "UNVERIFIED", "clinical_validation": "UNVERIFIED",
+                }
+                index._append_audit(
+                    session_id, "motion_export_started", details,
+                    actor="local_cli", outcome="started")
+                intent_id = index.conn.execute(
+                    "SELECT event_id FROM audit_events ORDER BY id DESC LIMIT 1").fetchone()[0]
+            # No file publication is attempted unless the intent transaction committed.
+            write_motion(out, data)
+            with index.transaction():
+                current = read_metadata_state(index, session_id)
+                if (current["status"] != "AVAILABLE"
+                        or current["origin"] != state["origin"]
+                        or current["context_sha256"] != state["context_sha256"]):
+                    raise ValueError("EXPORT_CONTEXT_CHANGED")
+                if bind_run(manifest, trc, mot)["provenance"] != data["provenance"]:
+                    raise ValueError("EXPORT_SOURCE_CHANGED")
+                if _bounded_export_sha256(out, len(raw)) != output_sha256:
+                    raise ValueError("EXPORT_OUTPUT_CHANGED")
+                index._append_audit(
+                    session_id, "motion_export_published",
+                    {**details, "started_event_id": intent_id},
+                    actor="local_cli", outcome="published")
+            return data
+        finally:
+            index.close()
+
+_EXPORT_REFUSALS = {
+    "TRC_INVALID": "Filtered marker input is invalid.",
+    "MOT_INVALID": "Selected motion input is invalid.",
+    "ARTIFACT_MISMATCH": "Native source binding does not match.",
+    "MOTION_INVALID": "Motion export data is invalid.",
+    "SCHEMA_UNSUPPORTED": "The existing local index schema is unsupported.",
+    "AUDIT_INVALID": "The existing local audit chain is invalid.",
+    "EVIDENCE_INVALID": "Verified source evidence is unavailable.",
+    "EXPORT_OUTPUT_CHANGED": "Published output verification failed; preserve the output.",
+    "EXPORT_AUDIT_UNAVAILABLE": "The existing local audit transaction is unavailable; preserve any output.",
+    "EXPORT_PENDING_PUBLICATION": "An earlier publication remains unresolved; preserve its evidence.",
+    "EXPORT_INDEX_ROOT_MISMATCH": "The project must belong to the selected local library root.",
+    "EXPORT_INDEX_REQUIRED": "An existing local audit index is required.",
+    "EXPORT_SESSION_MISMATCH": "The selected session and native run do not match.",
+    "EXPORT_OUTPUT_LOCATION": "Native exports require a session exports motion JSON destination.",
+    "OUTPUT_EXISTS": "The destination already exists; overwrite is refused.",
+    "EXPORT_CONTEXT_UNAVAILABLE": "Verified current session metadata is unavailable.",
+    "EXPORT_CONTEXT_CHANGED": "Current session metadata changed; preserve any published output.",
+    "EXPORT_SOURCE_CHANGED": "Native source evidence changed; preserve any published output.",
+    "EXPORT_CONTEXT_REQUIRES_MANIFEST": "An audit root requires an explicitly bound native run.",
+    "EXPORT_IO_UNAVAILABLE": "Local export input or publication is unavailable; preserve any output.",
+    "EXPORT_RUNTIME_UNAVAILABLE": "The required export runtime is unavailable.",
+    "EXPORT_REFUSED": "Export verification or publication is unavailable; preserve any output.",
+}
+
+
+def _safe_export_refusal(error):
+    """Return only a closed code and constant explanation, never exception text."""
+    code = "EXPORT_REFUSED"
+    if type(error) is ValueError and len(error.args) == 1 and type(error.args[0]) is str:
+        prefix = error.args[0].partition(":")[0]
+        if prefix in _EXPORT_REFUSALS:
+            code = prefix
+    elif isinstance(error, FileExistsError):
+        code = "OUTPUT_EXISTS"
+    elif isinstance(error, sqlite3.Error):
+        code = "EXPORT_AUDIT_UNAVAILABLE"
+    elif isinstance(error, OSError):
+        code = "EXPORT_IO_UNAVAILABLE"
+    elif isinstance(error, ImportError):
+        code = "EXPORT_RUNTIME_UNAVAILABLE"
+    return code + ": " + _EXPORT_REFUSALS[code]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--project", type=Path, default=ROOT)
     p.add_argument("--trc", type=Path)
     p.add_argument("--mot", type=Path)
     p.add_argument("--run-manifest", type=Path)
+    p.add_argument("--data-root", type=Path, help="Existing local library root; native-v2 default is the project parent")
     p.add_argument("--out", type=Path)
     p.add_argument("--no-mot", action="store_true")
     a = p.parse_args()
@@ -452,11 +684,17 @@ def main():
     if out.exists():
         p.error("OUTPUT_EXISTS: Refusing overwrite")
     try:
-        data = motion(trc, mot, run_manifest=a.run_manifest)
-        write_motion(out, data)
-    except (ValueError, OSError, ImportError) as error:
-        p.error(str(error))
-    print(f"EXPORT_OK={out} frames={len(data['frames'])} markers={len(data['markers'])} mot={mot is not None}")
+        if a.run_manifest:
+            data = _publish_audited_motion(a.project.absolute(), trc, mot, a.run_manifest, out, a.data_root)
+        else:
+            if a.data_root is not None:
+                raise ValueError("EXPORT_CONTEXT_REQUIRES_MANIFEST")
+            data = motion(trc, mot)
+            write_motion(out, data)
+    except (ValueError, OSError, ImportError, sqlite3.Error) as error:
+        # Preserve any intent/output after an ambiguous write; no sensitive exception text.
+        p.error(_safe_export_refusal(error))
+    print(f"EXPORT_OK=1 frames={len(data['frames'])} markers={len(data['markers'])} mot={mot is not None}")
 
 
 if __name__ == "__main__":

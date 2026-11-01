@@ -7,14 +7,14 @@ Creating this file alone NEVER establishes synchronized reconstruction quality.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from fractions import Fraction
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 from session_contract import load_session
+from take_acceptance import TakeAcceptanceError, checked_path
 from workflow_controller import WorkflowBlocked, WorkflowController
 
 
@@ -26,9 +26,16 @@ CAMERAS = ("cam01", "cam02")
 MIN_SEPARATION_FRAMES = 30  # Separate start/end events by at least one second.
 
 
+def _checked_project(project: Path) -> Path:
+    try:
+        return checked_path(project).resolve()
+    except TakeAcceptanceError as error:
+        raise SyncEvidenceError("Project path must be a plain non-link") from error
+
+
 def normalized_videos(project: Path) -> tuple[dict, dict]:
     """Return registered identity and exact normalized-video metadata."""
-    project = Path(project).resolve()
+    project = _checked_project(project)
     try:
         workflow = WorkflowController(project)
         workflow._verify_preflight()
@@ -134,13 +141,13 @@ def prepare_sync(project: Path, cues: dict, *, reference: str, operator_confirme
             "Reference-camera zero offset and first-pair zero residual are mathematical definitions, not independent accuracy claims.",
             "Only a later Pose2Sim native synchronization/quality stage can confirm reference and offset.",
         ],
-        "recorded_utc": datetime.now(timezone.utc).isoformat(),
+        "recorded_utc": datetime.now(UTC).isoformat(),
     }
 
 
 def save_sync(project: Path, cues: dict, *, reference: str, operator_confirmed: bool) -> Path:
     """Publish one complete cue manifest with no overwrite and no source changes."""
-    project = Path(project).resolve()
+    project = _checked_project(project)
     output = project / "sync-observations.json"
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"Sync evidence already exists and must not be overwritten: {output}")

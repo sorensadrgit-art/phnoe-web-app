@@ -6,15 +6,20 @@ the subsequent comparison, and clinical accuracy is independently unverified.
 """
 from __future__ import annotations
 
-import cv2
-from PIL import Image, ImageTk
-from pathlib import Path
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
 
+import cv2
+from PIL import Image, ImageTk
+
 from sync_evidence import (
-    CAMERAS, SyncEvidenceError, normalized_videos, prepare_sync,
-    save_sync, suggested_reference,
+    CAMERAS,
+    SyncEvidenceError,
+    normalized_videos,
+    prepare_sync,
+    save_sync,
+    suggested_reference,
 )
 
 BG = "#0B1722"
@@ -29,6 +34,23 @@ class FrameReviewError(ValueError):
     pass
 
 
+def release_widget_references(owner: tk.Misc) -> None:
+    """Drop an already-destroyed window's references to its child widgets and Tk images.
+
+    Child widgets (via `master`) and Tk variables (via `_root`) can point back to the window, so
+    attributes holding them form reference cycles. Left to the cyclic collector, the final Tcl
+    reference may be dropped on a non-Tk thread, which leaks the Tcl interpreter.
+    """
+    for name, value in list(vars(owner).items()):
+        if name == "master":
+            continue
+        if isinstance(value, (tk.Misc, tk.Variable)):
+            delattr(owner, name)
+        elif isinstance(value, dict) and any(
+                isinstance(item, (tk.Misc, ImageTk.PhotoImage)) for item in value.values()):
+            value.clear()
+
+
 def read_exact_frame(capture, requested: int):
     """Seek then verify the decoded frame index; never show a different cue frame."""
     if type(requested) is not int or requested < 0:
@@ -38,7 +60,7 @@ def read_exact_frame(capture, requested: int):
     ok, frame = capture.read()
     if not ok or frame is None:
         raise FrameReviewError(f"Cannot decode video frame {requested}")
-    actual = int(round(capture.get(cv2.CAP_PROP_POS_FRAMES))) - 1
+    actual = round(capture.get(cv2.CAP_PROP_POS_FRAMES)) - 1
     if actual != requested:
         raise FrameReviewError(f"Requested frame {requested}, but decoded frame {actual}; do not mark this cue")
     return frame
@@ -46,8 +68,8 @@ def read_exact_frame(capture, requested: int):
 
 class SyncReviewWindow(tk.Toplevel):
     def __init__(self, parent: tk.Misc, project: Path):
+        self.session, self.videos = normalized_videos(project)
         self.project = Path(project).resolve()
-        self.session, self.videos = normalized_videos(self.project)
         if (self.project / "sync-observations.json").exists():
             raise SyncEvidenceError("Existing sync-observations.json is immutable; use a clean session to remark cues")
         super().__init__(parent)
@@ -55,14 +77,14 @@ class SyncReviewWindow(tk.Toplevel):
         self.geometry("1130x790")
         self.minsize(960, 640)
         self.configure(bg=BG)
-        self.readers = {}
-        self.marks = {camera: {} for camera in CAMERAS}
-        self.frame_verified = {camera: None for camera in CAMERAS}
-        self.preview_widgets = {}
-        self.frame_widgets = {}
-        self.message_widgets = {}
-        self.scales = {}
-        self.photo_refs = {}
+        self.readers: dict[str, cv2.VideoCapture] = {}
+        self.marks: dict[str, dict[str, int]] = {camera: {} for camera in CAMERAS}
+        self.frame_verified: dict[str, int | None] = {camera: None for camera in CAMERAS}
+        self.preview_widgets: dict[str, tk.Label] = {}
+        self.frame_widgets: dict[str, tk.Label] = {}
+        self.message_widgets: dict[str, tk.Label] = {}
+        self.scales: dict[str, tk.Scale] = {}
+        self.photo_refs: dict[str, ImageTk.PhotoImage] = {}
         self.reference = tk.StringVar(value=suggested_reference(self.project))
         try:
             for camera in CAMERAS:
@@ -239,3 +261,7 @@ class SyncReviewWindow(tk.Toplevel):
         for cap in self.readers.values():
             cap.release()
         self.destroy()
+
+    def destroy(self):
+        super().destroy()
+        release_widget_references(self)

@@ -14,10 +14,10 @@ import {
 } from './liveKinematics.js';
 
 test('normalizePoint parses objects, arrays and rejects invalid values', () => {
-  assert.deepEqual(normalizePoint({ x: 10, y: 20 }), { x: 10, y: 20, z: 0 });
+  assert.deepEqual(normalizePoint({ x: 10, y: 20 }), { x: 10, y: 20, z: null });
   assert.deepEqual(normalizePoint({ x: 10, y: 20, z: -5 }), { x: 10, y: 20, z: -5 });
   assert.deepEqual(normalizePoint([1.5, 2.5, 3.5]), { x: 1.5, y: 2.5, z: 3.5 });
-  assert.deepEqual(normalizePoint([1.5, 2.5]), { x: 1.5, y: 2.5, z: 0 });
+  assert.deepEqual(normalizePoint([1.5, 2.5]), { x: 1.5, y: 2.5, z: null });
   assert.equal(normalizePoint(null), null);
   assert.equal(normalizePoint(undefined), null);
   assert.equal(normalizePoint({ x: 'bad', y: 1 }), null);
@@ -49,7 +49,7 @@ test('calculateAngle2D verifies right angles, straight limbs, and acute angles',
   assert.equal(angle45, 45);
 
   // Degenerate inputs (coincident vertex)
-  assert.equal(calculateAngle2D({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 1, y: 0 }), 0);
+  assert.equal(calculateAngle2D({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 1, y: 0 }), null);
   assert.equal(calculateAngle2D(null, { x: 0, y: 0 }, { x: 1, y: 0 }), null);
 });
 

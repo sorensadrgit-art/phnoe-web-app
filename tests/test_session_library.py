@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from session_library import SessionLibrary, SessionError
 from session_contract import ROLES, sha256_file
+from session_library import SessionError, SessionLibrary
 
 
 class SessionLibraryTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class SessionLibraryTests(unittest.TestCase):
         with self.assertRaises(SessionError):
             self.library.register_session("registered-a")
         with self.assertRaises(SessionError):
-            self.library.stage_take("registered-a", "cam01_trial", project / "session.json")
+            self.library.stage_take("registered-a", "cam01_board", project / "session.json")
 
     def test_registered_status_rechecks_source_hashes_not_only_manifest_schema(self):
         project = self.library.create_session("hash-check")
@@ -100,7 +100,7 @@ class SessionLibraryTests(unittest.TestCase):
 
     def test_stage_and_explicit_accept_preserve_prior_footage(self):
         project = self.library.create_session("takes-a")
-        role = "cam01_trial"
+        role = "cam01_board"
         original = project / "raw" / (role + ".mp4")
         original.write_bytes(b"original-camera-clip")
         sample = Path(self.tmp.name) / "new-trial.mp4"
@@ -124,7 +124,7 @@ class SessionLibraryTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), b"new-camera-clip")
         self.assertEqual(sample.read_bytes(), b"new-camera-clip")
         self.assertEqual(staged.read_bytes(), b"new-camera-clip")
-        archives = list((project / "takes" / "archive").glob("cam01_trial-*.mp4"))
+        archives = list((project / "takes" / "archive").glob(role + "-*.mp4"))
         self.assertEqual(len(archives), 1)
         self.assertEqual(sha256_file(archives[0]), before)
 
@@ -133,10 +133,40 @@ class SessionLibraryTests(unittest.TestCase):
         unrelated = Path(self.tmp.name) / "unrelated.mp4"
         unrelated.write_bytes(b"not-selected")
         with self.assertRaises(SessionError):
-            self.library.accept_take("takes-b", "cam01_trial", unrelated)
+            self.library.accept_take("takes-b", "cam01_board", unrelated)
         with self.assertRaises(SessionError):
             self.library.stage_take("takes-b", "cam01_madeup", unrelated)
-        self.assertFalse((project / "raw" / "cam01_trial.mp4").exists())
+        self.assertFalse((project / "raw" / "cam01_board.mp4").exists())
+
+    def test_participant_trial_takes_refused_before_any_write(self):
+        project = self.library.create_session("takes-trial")
+        sample = Path(self.tmp.name) / "generated-trial.mp4"
+        sample.write_bytes(b"generated-not-participant-footage")
+
+        def tree():
+            return {p.relative_to(project).as_posix(): p.read_bytes()
+                    for p in project.rglob("*") if p.is_file()}
+
+        for role in ("cam01_trial", "cam02_trial"):
+            staged = project / "takes" / role / ("b" * 32 + ".mp4")
+            staged.parent.mkdir(parents=True)
+            staged.write_bytes(b"generated-pre-existing-take")
+            before = tree()
+            calls = ((self.library.stage_take, "takes-trial", sample),
+                     (self.library.accept_take, "takes-trial", staged),
+                     (self.library._stage_take_locked, project, sample),
+                     (self.library._accept_take_locked, project, staged))
+            with patch("session_library.probe_clip") as probe, \
+                 patch("session_library.takes.acceptance_lease") as lease:
+                for call, target, source in calls:
+                    with self.subTest(role=role, call=call.__name__), \
+                         self.assertRaisesRegex(SessionError, "PARTICIPANT_RECORDING_BLOCKED"):
+                        call(target, role, source)
+                probe.assert_not_called()
+                lease.assert_not_called()
+            self.assertEqual(tree(), before)
+            self.assertFalse((project / "raw" / (role + ".mp4")).exists())
+        self.assertEqual(sample.read_bytes(), b"generated-not-participant-footage")
 
     def test_missing_raw_files_do_not_create_real_registry_or_quality_data(self):
         project = self.library.create_session("immutable-a")

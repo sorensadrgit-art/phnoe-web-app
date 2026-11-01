@@ -4,16 +4,7 @@ export const appIdentity={
   releaseStatus:'PRE-RELEASE / LOCAL SOFTWARE PROTOTYPE',
   validation:'REAL 3D PHYSICAL ACCURACY UNVERIFIED',
 };
-export const NAV_ITEMS=[
-  {id:'overview',label:'Overview',icon:'▦',description:'Application and pipeline status'},
-  {id:'sessions',label:'Session library',icon:'▤',description:'Capture inventory and session management'},
-  {id:'capture',label:'Capture studio',icon:'◎',description:'Phone and webcam recordings'},
-  {id:'process',label:'Processing',icon:'⌁',description:'Calibration, synchronization and 3D gates'},
-  {id:'motion',label:'Motion lab',icon:'◇',description:'3D skeleton, video and time plots'},
-  {id:'analysis',label:'Analysis',icon:'◫',description:'Test-only gait and squat tools'},
-  {id:'reports',label:'Reports',icon:'▥',description:'Local manifest exports and guides'},
-  {id:'diagnostics',label:'Diagnostics',icon:'⚙',description:'Local service and recovery'},
-];
+export {NAV_ITEMS} from './unifiedModel.js';
 export const VIDEO_ROLES=[
  'cam01_intrinsics','cam02_intrinsics','cam01_board','cam02_board','cam01_trial','cam02_trial',
 ];

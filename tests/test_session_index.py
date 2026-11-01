@@ -1,12 +1,11 @@
 """Tests for SQLite session indexing, Evidence Passport state machine, and session comparison."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
-from session_index import SessionIndex, PassportState
+from session_index import SessionIndex
 from session_library import SessionLibrary
 
 
@@ -32,7 +31,7 @@ class SessionIndexTests(unittest.TestCase):
         idx2.close()
 
     def test_reindex_empty_and_draft_sessions(self):
-        folder = self.library.create_session("draft-01", kind="real")
+        self.library.create_session("draft-01", kind="real")
         self.index.reindex()
         sessions = self.index.query_sessions()
         self.assertEqual(len(sessions), 1)
@@ -65,6 +64,14 @@ class SessionIndexTests(unittest.TestCase):
         comp = self.index.compare_sessions("s1", "s2")
         self.assertFalse(comp["compatible"])
         self.assertIn("incompatible", comp["reason"].lower())
+
+    def test_two_empty_real_sessions_are_not_compatible_measurements(self):
+        self.library.create_session("empty-a", kind="real")
+        self.library.create_session("empty-b", kind="real")
+        self.index.reindex()
+        comparison = self.index.compare_sessions("empty-a", "empty-b")
+        self.assertFalse(comparison["compatible"])
+        self.assertIn("evidence", comparison["reason"].lower())
 
     def test_backup_database_produces_consistent_copy(self):
         self.library.create_session("backup-test", kind="real")

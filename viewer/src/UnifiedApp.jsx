@@ -2,9 +2,13 @@ import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import MotionApp from './MotionApp.jsx';
 import EvidencePassport from './EvidencePassport.jsx';
 import GuidedCaptureWizard from './GuidedCaptureWizard.jsx';
+import SessionMetadataSetup from './SessionMetadataSetup.jsx';
+import {METADATA_FIELDS,currentMetadataState,isValidSessionMetadata,metadataConfirmationMatches,metadataRevisionReceiptMatches,newOperationId} from './sessionMetadataSetup.js';
 import ReportStudio from './ReportStudio.jsx';
+import {evidenceMetadataIdentity,checkedContext,checkedReceipt} from './EvidenceExportPanel.jsx';
+import {boundedJsonResponse,API_ERROR_JSON_LIMIT} from './boundedJsonResponse.js';
 import LiveTrackerStudio from './LiveTrackerStudio.jsx';
-import {NAV_ITEMS,STAGES,formatSession,roleStatus,apiSessionPath,readAccessToken} from './unifiedModel.js';
+import {NAV_ITEMS,STAGES,formatSession,roleStatus,apiSessionPath,readAccessToken,safeMetricValue,sessionDisplayBadge,isSessionActive,EXERCISE_TYPES,DEFAULT_PRESETS,formatExerciseMetric,formatStaleNotice,isStale} from './unifiedModel.js';
 
 const API='/api/v1';
 const TEST_ID='caliscope-walking-test-20261027';
@@ -53,15 +57,25 @@ export default function UnifiedApp(){
   try{localStorage.setItem('kinelab_active_tab',next)}catch{}
  },[]);
  const [sessions,setSessions]=useState([]);
+ const [recordingBusy,setRecordingBusy]=useState(false);
  const [selected,setSelectedState]=useState(()=>{
   try{return localStorage.getItem('kinelab_selected_session')||''}catch{return ''}
  });
+  const evidenceOperations=useRef(new Set());
+  const selectedRef=useRef(selected);
+  const selectionEpoch=useRef(0);
+  const selectedRequest=useRef({sequence:0,controller:null});
+  const sessionsRequest=useRef(0);
  const setSelected=useCallback(next=>{
-  setSelectedState(prev=>{
-   const val=typeof next==='function'?next(prev):next;
+   const val=typeof next==='function'?next(selectedRef.current):next;
+   if(val!==selectedRef.current){
+    selectedRef.current=val;selectionEpoch.current++;
+    for(const controller of evidenceOperations.current)controller.abort();
+    selectedRequest.current.controller?.abort();
+    setDetail(null);setPassport(null);setReports([]);setJob(null);setCamera(null);setRecovery(null);setLastPoll('');
+   }
    try{localStorage.setItem('kinelab_selected_session',val)}catch{}
-   return val;
-  });
+   setSelectedState(val);
  },[]);
  const [connected,setConnected]=useState(true);
  const [detail,setDetail]=useState(null);
@@ -78,50 +92,151 @@ export default function UnifiedApp(){
  const [busy,setBusy]=useState('');
  const [notice,setNotice]=useState(null);
  const [lastPoll,setLastPoll]=useState('');
+ const [lastRefreshedMs,setLastRefreshedMs]=useState(null);
+ const [fetchError,setFetchError]=useState(null);
+ const [nowTick,setNowTick]=useState(()=>Date.now());
+ useEffect(()=>{
+  const interval=setInterval(()=>setNowTick(Date.now()),1000);
+  return ()=>clearInterval(interval);
+ },[]);
  const inputRefs=useRef({});
+ const correctionAttempt=useRef(null);
+ const sessionsRef=useRef(sessions);
  const show=(text,type='info')=>setNotice({text:String(text),type});
 
- const api=useCallback(async(path,{method='GET',body=null,binary=false}={})=>{
+  const api=useCallback(async(path,{method='GET',body=null,binary=false,signal}={})=>{
   const tok=activeToken;
   if(!tok)throw Error('Open KineLab PT using its single desktop icon to authorize the local workspace.');
   const headers={Authorization:'Bearer '+tok};
   if(!binary && body!==null)headers['Content-Type']='application/json';
   if(binary){headers['Content-Type']='video/mp4';headers['X-KineLab-Consent']='yes';}
-  const response=await fetch(path,{method,headers,
+   const response=await fetch(path,{method,headers,signal,
    body:body===null?undefined:(binary?body:JSON.stringify(body)),cache:'no-store'});
   if(!response.ok){
    let msg='Local service rejected this action (HTTP '+response.status+')';
-   try{const result=await response.json();msg=result.error??msg}catch{/* keep honest status */}
-   throw Error(msg);
+   try{const result=await boundedJsonResponse(response,{maxBytes:API_ERROR_JSON_LIMIT,signal});if(typeof result?.error==='string')msg=result.error}catch{/* keep honest status */}
+   const failure=Error(msg);failure.status=response.status;throw failure;
   }
   return response;
  },[activeToken]);
  const json=useCallback(async(path,options)=>await (await api(path,options)).json(),[api]);
+ const evidenceExportRequest=useCallback(async(sid,identity,action,body,{signal,operation}={})=>{
+  const epoch=selectionEpoch.current;
+  const current=()=>!signal?.aborted&&sid===selectedRef.current&&epoch===selectionEpoch.current
+    &&identity!==null&&evidenceMetadataIdentity(sessionsRef.current.find(item=>item?.id===sid),sid)===identity;
+  if(!current())throw Error('Evidence export session or subject context changed. No request was sent.');
+  if(operation!==undefined){
+   if(!operation||operation.controller?.signal!==signal||typeof operation.controller?.abort!=='function'
+      ||!(operation.current===null||typeof operation.current==='function'))
+    throw Error('Evidence export operation binding is invalid.');
+   if(operation.current===null){
+    operation.current=()=>{const valid=current();if(!valid)operation.controller.abort();return valid;};
+    evidenceOperations.current.add(operation.controller);
+    signal.addEventListener('abort',()=>evidenceOperations.current.delete(operation.controller),{once:true});
+   }
+   if(!operation.current())throw Error('Evidence export operation changed. Result is unconfirmed.');
+  }
+  const root=apiSessionPath(sid);
+  let path,options={signal};
+  if(action==='context')path=root+'/report-context';
+  else if(action==='publish'){path=root+'/evidence-exports';options={method:'POST',body,signal};}
+  else if((action==='receipt'||action==='artifact')&&typeof body?.operation_id==='string'&&/^[0-9a-f]{32}$/.test(body.operation_id))
+    path=root+'/evidence-exports/'+body.operation_id+(action==='artifact'?'/artifact':'');
+  else throw Error('Evidence export request is invalid.');
+  const response=await api(path,options);
+  if(!current()){try{await response.body?.cancel();}catch{}throw Error('Evidence export context changed. Result is unconfirmed.');}
+  const value=action==='artifact'?response:await boundedJsonResponse(response,{signal});
+  if(!current())throw Error('Evidence export context changed. Result is unconfirmed.');
+  return action==='artifact'?value:action==='context'?checkedContext(value,sid):checkedReceipt(value,sid,body);
+ },[api]);
 
- const refreshSessions=useCallback(async()=>{
-  const result=await json(API+'/sessions');
-  setSessions(result.sessions||[]);
-  setSelected(old=>{
-   if(result.sessions.some(item=>item.id===old))return old;
-   return result.sessions.find(item=>item.id==='capture-20261026-trial01')?.id
-     ??result.sessions.find(item=>item.kind==='real'&&item.status==='draft')?.id
-     ??result.sessions[0]?.id??'';
-  });
+ const loadManualAssessmentContext=useCallback(async(sid,{signal}={})=>{
+  const epoch=selectionEpoch.current;
+  const current=currentMetadataState(sessionsRef.current.find(item=>item?.id===sid),sid);
+  if(!current||sid!==selectedRef.current||signal?.aborted)
+   throw Error('Manual assessment context is unavailable for the current selected session.');
+  const result=await json(apiSessionPath(sid)+'/manual-assessment-context',{signal});
+  const latest=currentMetadataState(sessionsRef.current.find(item=>item?.id===sid),sid);
+  if(signal?.aborted||sid!==selectedRef.current||epoch!==selectionEpoch.current||latest?.context!==current.context)
+   throw Error('Selected session or metadata context changed while loading the manual assessment context.');
+  if(result?.schema!=='kinelab.manual-assessment-context.v1'||result.status!=='AVAILABLE'
+     ||result.session_id!==sid||result.metadata_context_sha256!==current.context
+     ||result.origin_sha256!==current.state.origin.sha256
+     ||result.test_only!==true||result.clinical_accuracy_validated!==false)
+   throw Error('Manual assessment context does not match the selected session and current metadata.');
+  return result;
+ },[json]);
+ const publishManualAssessment=useCallback(async(sid,body)=>{
+  const epoch=selectionEpoch.current;
+  const current=currentMetadataState(sessionsRef.current.find(item=>item?.id===sid),sid);
+  if(!current||sid!==selectedRef.current||body?.metadata_context_sha256!==current.context)
+   throw Error('Manual assessment publication refused: selected session or metadata context is stale.');
+  const receipt=await json(apiSessionPath(sid)+'/manual-assessments',{method:'POST',body});
+  const latest=currentMetadataState(sessionsRef.current.find(item=>item?.id===sid),sid);
+  if(sid!==selectedRef.current||epoch!==selectionEpoch.current||latest?.context!==current.context)
+   throw Error('Manual assessment publication outcome is unconfirmed: selected session or metadata context changed. Inspect the session before retrying.');
+  if(receipt?.schema!=='kinelab.manual-assessment-entry-receipt.v1'||receipt.session_id!==sid
+     ||receipt.operation_id!==body.operation_id||receipt.metadata_context_sha256!==current.context
+     ||receipt.test_only!==true||receipt.clinical_accuracy_validated!==false)
+   throw Error('Manual assessment receipt does not match the selected session and metadata context. Publication is unconfirmed.');
+  return receipt;
  },[json]);
 
- const refreshSelected=useCallback(async(sid)=>{
-  if(!sid){setDetail(null);setPassport(null);setReports([]);setJob(null);setCamera(null);return}
+ const refreshSessions=useCallback(async()=>{
+   const sequence=++sessionsRequest.current,epoch=selectionEpoch.current;
+  try {
+   const result=await json(API+'/sessions');
+   if(sequence!==sessionsRequest.current)return;
+   const nextSessions=result.sessions||[];
+   sessionsRef.current=nextSessions;
+   setSessions(nextSessions);
+   setLastRefreshedMs(Date.now());
+   setFetchError(null);
+   if(epoch!==selectionEpoch.current)return;
+   setSelected(old=>{
+    if(result.sessions.some(item=>isSessionActive(item,old)))return old;
+     return '';
+   });
+  } catch(error) {
+   if(sequence!==sessionsRequest.current)return;
+   setFetchError(error?.message||'Session library refresh failed');
+   throw error;
+  }
+ },[json]);
+
+  const refreshSelected=useCallback(async(sid,{force=false}={})=>{
+   if(!sid||sid!==selectedRef.current)return;
+   const prior=selectedRequest.current;
+   if(!force&&prior.pending&&prior.sid===sid&&prior.epoch===selectionEpoch.current)return;
+   selectedRequest.current.controller?.abort();
+   const controller=new AbortController(),sequence=++selectedRequest.current.sequence;
+   const epoch=selectionEpoch.current;
+   selectedRequest.current={controller,sequence,epoch,sid,pending:true};
+   const timeout=setTimeout(()=>controller.abort('Session refresh timed out'),15000);
+   const current=()=>selectedRef.current===sid && selectionEpoch.current===epoch &&
+      selectedRequest.current.sequence===sequence && !controller.signal.aborted;
   const base=apiSessionPath(sid);
   try {
-    const [info,pstate,cstate,reps,pass]=await Promise.all([
-     json(base),json(base+'/processing'),json(base+'/capture'),json(base+'/reports'),json(base+'/passport')]);
-    setDetail(info);setJob(pstate);setCamera(cstate);setReports(reps.reports||[]);setPassport(pass);
-  } catch(e) {
-    const [info,pstate,cstate,reps]=await Promise.all([
-     json(base),json(base+'/processing'),json(base+'/capture'),json(base+'/reports')]);
-    setDetail(info);setJob(pstate);setCamera(cstate);setReports(reps.reports||[]);setPassport(null);
+     const [info,pstate,cstate,reps,pass]=await Promise.all(
+      [base,base+'/processing',base+'/capture',base+'/reports',base+'/passport'].map(path=>json(path,{signal:controller.signal})));
+     if(!current())return;
+     if(info.id!==sid||pass.session_id!==sid||[pstate,cstate,reps].some(item=>item.session_id&&item.session_id!==sid))
+       throw Error('Session identity mismatch; data was not displayed.');
+     setDetail(info);setJob(pstate);setCamera(cstate);
+     setReports((reps.reports||[]).map(item=>({...item,session_id:sid})));setPassport(pass);
+     setLastPoll(new Date().toLocaleTimeString());
+     setLastRefreshedMs(Date.now());
+     setFetchError(null);
+   } catch(error) {
+     if(selectedRef.current!==sid||selectionEpoch.current!==epoch||selectedRequest.current.sequence!==sequence)return;
+     setDetail(null);setPassport(null);setReports([]);setJob(null);setCamera(null);
+     setLastPoll('Refresh failed — session data unavailable');
+     setFetchError(error?.message||'Active session refresh failed');
+     throw error;
+   } finally {
+     clearTimeout(timeout);
+     if(selectedRequest.current.sequence===sequence)selectedRequest.current.pending=false;
   }
-  setLastPoll(new Date().toLocaleTimeString());
  },[json]);
 
  useEffect(()=>{
@@ -138,7 +253,7 @@ export default function UnifiedApp(){
   if(!selected||!token)return;
   let active=true;
   refreshSelected(selected).catch(error=>{if(active)show(error.message,'error')});
-  return ()=>{active=false};
+   return ()=>{active=false;selectedRequest.current.controller?.abort()};
  },[selected,token,refreshSelected]);
 
  useEffect(()=>{
@@ -166,6 +281,23 @@ export default function UnifiedApp(){
   return ()=>{unmounted=true;clearInterval(timer);};
  },[activeToken]);
 
+ const handleRetryConnection=useCallback(async()=>{
+  setLoading(true);
+  setFetchError(null);
+  try {
+   await refreshSessions();
+   if(selectedRef.current){
+    await refreshSelected(selectedRef.current,{force:true});
+   }
+   show('Session connection refreshed successfully.','info');
+  } catch(err) {
+   setFetchError(err?.message||'Retry connection failed');
+   show('Retry failed: '+(err?.message||'service unavailable'),'error');
+  } finally {
+   setLoading(false);
+  }
+ },[refreshSessions,refreshSelected]);
+
  const shutdownServer=async()=>{
   if(!confirmAction('Are you sure you want to stop the local KineLab service? You can restart it anytime via the desktop shortcut.'))return;
   try{
@@ -177,13 +309,14 @@ export default function UnifiedApp(){
 
  const mutate=async(label,work)=>{
   if(busy)return;
+   const epoch=selectionEpoch.current;
   setBusy(label);setNotice(null);
   try{
    const response=await work();
-   show((response&&response.message)||label+' completed. Review the updated status.');
+    if(epoch===selectionEpoch.current)show((response&&response.message)||label+' completed. Review the updated status.');
    await refreshSessions();
-   if(selected)await refreshSelected(selected);
-  }catch(error){show(error.message,'error')}
+    if(epoch===selectionEpoch.current&&selectedRef.current)await refreshSelected(selectedRef.current,{force:true});
+   }catch(error){if(epoch===selectionEpoch.current)show(error.message,'error')}
   finally{setBusy('')}
  };
  const doPost=(suffix,data)=>json(apiSessionPath(selected)+suffix,
@@ -197,13 +330,17 @@ export default function UnifiedApp(){
   if(!confirmAction('Open '+target+' for session '+selected+'? This may open a native window.'))return;
   mutate('open-'+target,()=>doPost('/open',{target,confirm:true}));
  }
- const newSession=()=>{
+ const newSession=metadata=>{
   const text=newId.trim();
   if(!text)return show('Provide a unique session ID.','error');
+  if(!isValidSessionMetadata(metadata))return show('Confirm valid opaque subject, operator, task, protocol and laterality metadata.','error');
   if(!confirmAction('Create a new, unregistered REAL capture session named '+text+'?'))return;
-  mutate('new-session',async()=>{
-   const result=await json(API+'/sessions',{method:'POST',body:{id:text,kind:'real'}});
-   setSelected(result.id);setNewId('');
+  const snapshot=Object.freeze({...metadata}),epoch=selectionEpoch.current;
+  return mutate('new-session',async()=>{
+   const result=await json(API+'/sessions',{method:'POST',body:{id:text,kind:'real',metadata:snapshot}});
+   if(result.id!==text||!metadataConfirmationMatches(result.metadata_confirmation,text,snapshot))
+    throw Error('Session metadata readback is unavailable or mismatched. Inspect the created session; no retry was performed.');
+   if(epoch===selectionEpoch.current){setSelected(result.id);setNewId('');}
    return {message:'New local session created: '+result.id};
   });
  };
@@ -218,7 +355,8 @@ export default function UnifiedApp(){
   if(!confirmAction('Did you physically measure the printed square with a ruler? Save '+mm+' mm as an operator measurement?'))return;
   mutate('board',async()=>{
    const value=await doPost('/board',{confirm:true,mm,operator:operator.trim()});
-   return {message:'Recorded physical ruler entry of '+value.measured_square_mm+' mm. This is not verified calibration.'};
+   const measured=safeMetricValue(value?.measured_square_mm)??'UNAVAILABLE';
+   return {message:'Recorded physical ruler entry of '+measured+' mm. This is not verified calibration.'};
   });
  };
  async function importPhone(role,file){
@@ -250,37 +388,120 @@ export default function UnifiedApp(){
   mutate('cancel-process',()=>doPost('/processing/cancel',{confirm:true}));
  };
  const fetchRecovery=()=>mutate('recovery',async()=>{
-  setRecovery(await json(apiSessionPath(selected)+'/recovery'));
+   const sid=selectedRef.current,epoch=selectionEpoch.current;
+   const result=await json(apiSessionPath(sid)+'/recovery');
+   if(sid===selectedRef.current&&epoch===selectionEpoch.current)setRecovery(result);
   return {message:'Recovery and lock diagnostics inspected without changing any files.'};
  });
  const downloadReport=async item=>{
+   const sid=selectedRef.current,epoch=selectionEpoch.current;
   try{
+    if(item.session_id!==sid)throw Error('Report belongs to a different session. Refresh its report list.');
    setBusy('download-'+item.key);
-   const response=await api(apiSessionPath(selected)+'/artifact/'+item.key);
-   const blob=await response.blob(),url=URL.createObjectURL(blob);
+    const response=await api(apiSessionPath(sid)+'/artifact/'+item.key);
+    const blob=await response.blob();
+    if(sid!==selectedRef.current||epoch!==selectionEpoch.current)return;
+    const url=URL.createObjectURL(blob);
    const link=document.createElement('a');link.href=url;link.download=item.filename;
    document.body.append(link);link.click();link.remove();
    setTimeout(()=>URL.revokeObjectURL(url),2000);
-   show('Downloaded '+item.filename+' from the selected local session.');
-  }catch(error){show(error.message,'error')}
+    show('Download requested for '+item.filename+' from '+sid+'. Check the browser download result.');
+   }catch(error){if(epoch===selectionEpoch.current)show(error.message,'error')}
   finally{setBusy('')}
  };
 
  const handleGenerateReports = async (sid) => {
-  if (!confirmAction(`Generate truthful offline PDF, CSV and JSON research reports for ${sid}?`)) return;
-  mutate('generate-reports', async () => {
-   const res = await json(apiSessionPath(sid) + '/reports/generate', { method: 'POST', body: { confirm: true } });
-   await refreshSelected(sid);
-   return res;
+  if(busy)return;
+  const epoch=selectionEpoch.current;
+  if(!sid||sid!==selectedRef.current)return show('Report generation requires the currently selected session. No request was sent.','error');
+  const row=sessionsRef.current.find(item=>item?.id===sid);
+  const demo=row?.kind==='demo';
+  const metadata=demo?null:currentMetadataState(row,sid);
+  if(!demo&&(row?.kind!=='real'||!metadata))return show('Current verified metadata is UNAVAILABLE for this real session. No report request was sent.','error');
+  const metadataContext=metadata?.context;
+  const current=()=>{
+   if(sid!==selectedRef.current||epoch!==selectionEpoch.current)return false;
+   const latest=sessionsRef.current.find(item=>item?.id===sid);
+   return demo?latest?.kind==='demo':latest?.kind==='real'&&currentMetadataState(latest,sid)?.context===metadataContext;
+  };
+  if(!confirmAction(`Generate truthful offline PDF, CSV and JSON research reports for ${sid}?`))return;
+  if(!current())return;
+  setBusy('generate-reports');setNotice(null);
+  try{
+   let body={confirm:true};
+   if(!demo){
+    const context=await json(apiSessionPath(sid)+'/report-context');
+    if(!current())return;
+    const exact=(value,keys)=>value!==null&&typeof value==='object'&&!Array.isArray(value)
+     &&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
+    const digest=value=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value);
+    const validHead=value=>value===null||(exact(value,['generation','manifest_sha256'])
+     &&typeof value.generation==='string'&&/^report-[0-9a-f]{32}$/.test(value.generation)&&digest(value.manifest_sha256));
+    if(!exact(context,['schema','session_id','status','report_context_sha256','head','reason'])
+      ||context.schema!=='kinelab.report-generation-context.v1'||context.session_id!==sid
+      ||context.status!=='AVAILABLE'||!digest(context.report_context_sha256)||!validHead(context.head)||context.reason!==null)
+     throw Error('Current report context is UNAVAILABLE or malformed. No report was generated.');
+    body={confirm:true,expected_report_head:context.head===null?null:{generation:context.head.generation,manifest_sha256:context.head.manifest_sha256},
+     expected_report_context_sha256:context.report_context_sha256};
+   }
+   if(!current())return;
+   const response=await json(apiSessionPath(sid)+'/reports/generate',{method:'POST',body});
+   if(!current())return;
+   await refreshSessions();
+   if(!current())return;
+   await refreshSelected(sid,{force:true});
+   if(!current())return;
+   show(response?.message||'Reports generated. Review the updated research reports.');
+  }catch(error){if(current())show(error?.message||'Report generation outcome is unavailable.','error')}
+  finally{setBusy('')}
+ };
+
+ // An unanswered or 5xx attempt keeps its exact body so resubmitting the same
+ // correction retries the same operation instead of publishing a second revision.
+ const correctMetadata=metadata=>{
+  const sid=selectedRef.current;
+  const current=sid&&detail?.id===sid?currentMetadataState(detail,sid):null;
+  if(!current)return show('Current verified metadata is UNAVAILABLE for this session. No correction was sent.','error');
+  if(!isValidSessionMetadata(metadata))return show('Confirm valid opaque subject, operator, task, protocol and laterality metadata.','error');
+  if(!confirmAction('Publish an operator-reported metadata correction for '+sid+'? The original session file stays unchanged. This is not identity, protocol or clinical verification.'))return;
+  const origin=current.state.origin.sha256,head=current.state.head?current.state.head.sha256:null;
+  const key=JSON.stringify([sid,origin,head,METADATA_FIELDS.map(name=>metadata[name])]);
+  let body=correctionAttempt.current?.key===key?correctionAttempt.current.body:null;
+  if(!body){
+   try{
+    body={metadata:Object.freeze({...metadata}),expected_origin_sha256:origin,expected_head_sha256:head,
+     operation_id:newOperationId(),reason_code:'operator_correction',confirm:true};
+   }catch(error){return show(error.message,'error')}
+  }
+  correctionAttempt.current={key,body};
+  return mutate('metadata-correction',async()=>{
+   try{
+    const receipt=await json(apiSessionPath(sid)+'/metadata-revisions',{method:'POST',body});
+    if(!await metadataRevisionReceiptMatches(receipt,sid,body))throw Error('Metadata revision receipt is unconfirmed for '+sid+'. Inspect the session before further work.');
+    if(correctionAttempt.current?.body===body)correctionAttempt.current=null;
+    return {message:'Operator-reported metadata correction published for '+sid+'. Current metadata was re-read from the local service.'};
+   }catch(error){
+    const definitive=Number.isInteger(error?.status)&&error.status>=400&&error.status<500;
+    if(definitive&&correctionAttempt.current?.body===body)correctionAttempt.current=null;
+    if(definitive)throw error;
+    throw Error((error?.message||'Correction outcome unknown')+'. The outcome is unconfirmed; resubmit the same correction to retry the same operation.');
+   }
   });
  };
 
  const handleCompareSessions = async (s1, s2) => {
-  return await json(`${API}/compare?s1=${encodeURIComponent(s1)}&s2=${encodeURIComponent(s2)}`);
+  const ids=[s1,s2];
+  const contexts=ids.map(id=>currentMetadataState(sessionsRef.current.find(item=>item?.id===id),id)?.context);
+  const missing=ids.filter((id,i)=>!contexts[i]);
+  if(missing.length)throw Error('Comparison unavailable: verified current metadata context is missing or malformed for '+missing.join(', ')+'. No comparison request was sent.');
+  return await json(`${API}/compare?s1=${encodeURIComponent(s1)}&s2=${encodeURIComponent(s2)}`
+   +`&expected_metadata_context_s1=${contexts[0]}&expected_metadata_context_s2=${contexts[1]}`);
  };
 
+ const loadBackupSchedule = useCallback(() => json(`${API}/backup/schedule`), [json]);
+
  const handleCreateBackup = async () => {
-  if (!confirmAction('Create a local ZIP backup of all sessions and the SQLite index?')) return;
+  if (!confirmAction('Create a local backup of all sessions, saved synthetic recordings and audit history? Finish native capture and processing first.')) return;
   mutate('create-backup', async () => {
    const res = await json(`${API}/backup/create`, { method: 'POST', body: { confirm: true } });
    return res;
@@ -288,16 +509,19 @@ export default function UnifiedApp(){
  };
 
  const handleRestoreBackup = async (backupName) => {
-  if (!confirmAction(`Restore sessions from ${backupName}? This will verify all file hashes in safe staging before updating.`)) return;
+  if (!confirmAction(`Recover ${backupName}? Complete backups are verified into a separate recovery folder. Legacy archives import new sessions only, without their database or audit history. Existing sessions are never overwritten.`)) return;
   mutate('restore-backup', async () => {
-   const res = await json(`${API}/backup/restore`, { method: 'POST', body: { confirm: true, backup_name: backupName, overwrite: true } });
+   const res = await json(`${API}/backup/restore`, { method: 'POST', body: { confirm: true, backup_name: backupName, overwrite: false } });
    await refreshSessions();
    if (selected) await refreshSelected(selected);
    return res;
   });
  };
 
- const active=sessions.find(entry=>entry.id===selected);
+ const isDataStale=isStale(lastRefreshedMs,15000,nowTick);
+ const showStaleBanner=!connected||fetchError!==null||(lastRefreshedMs!==null&&isDataStale);
+
+ const active=sessions.find(entry=>isSessionActive(entry,selected));
  const mode=active?formatSession(active):null;
  const subhead=NAV_ITEMS.find(item=>item.id===view);
 
@@ -320,8 +544,9 @@ export default function UnifiedApp(){
    <nav aria-label="KineLab views">{NAV_ITEMS.map(item=><button
     key={item.id} type="button" className={'uw-nav-link '+(view===item.id?'is-active':'')+(item.id==='live'?' is-live-link':'')}
     aria-current={view===item.id?'page':undefined}
+    disabled={recordingBusy&&item.id!==view}
     onClick={()=>{setView(item.id);if(item.id==='diagnostics'&&selected)fetchRecovery()}}>
-    <span className="uw-nav-icon" aria-hidden="true">{NAV_SIGNS[item.id]}</span>
+    <span className="uw-nav-icon" aria-hidden="true">{item.icon || NAV_SIGNS[item.id]}</span>
     <span>{item.label}{item.id==='live'&&<span className="uw-nav-live-dot">LIVE</span>}<small>{item.description}</small></span>
    </button>)}</nav>
    <div className="uw-sidebar-bottom">
@@ -342,27 +567,72 @@ export default function UnifiedApp(){
      </div>
      <label className="uw-select-wrap"><span>ACTIVE SESSION</span>
       <select aria-label="Select active session" value={selected}
-       onChange={event=>setSelected(event.target.value)} disabled={loading||!!busy}>
+       onChange={event=>setSelected(event.target.value)} disabled={loading||!!busy||recordingBusy}>
        {!selected&&<option value="">No sessions available</option>}
        {sessions.map(session=><option value={session.id} key={session.id}>{session.id}</option>)}
       </select></label>
-     <Pill tone={mode?.badge==='TEST ONLY'?'warning':'neutral'}>{mode?.badge??'NO SESSION'}</Pill>
+     <Pill tone={mode?.badge==='TEST ONLY'?'warning':mode?.badge==='SYNTHETIC'?'warning':mode?.badge==='UNVERIFIED'?'warning':mode?.badge==='REGISTERED'?'present':'neutral'}>{mode?.badge??'NO SESSION'}</Pill>
+     {passport?.board_measurement ? (
+      <div className="uw-setup-pill" title="Physical ruler measurement self-reported by operator; unverified auto-inferred scale">
+       <span className="uw-setup-dot" />
+       <span>RULER: {safeMetricValue(passport.board_measurement.measured_square_mm) ?? 'UNAVAILABLE'} mm (SELF-REPORTED)</span>
+      </div>
+     ) : selected ? (
+      <div className="uw-setup-pill is-pending" title="Checkerboard physical ruler measurement pending">
+       <span className="uw-setup-dot" />
+       <span>RULER: UNAVAILABLE</span>
+      </div>
+     ) : null}
     </div>
    </header>
    <div className="uw-content">
     <Notice message={notice} onClose={()=>setNotice(null)}/>
+    {showStaleBanner&&(
+     <div className="uw-stale-banner" role="alert">
+      <div className="uw-stale-banner-content">
+       <span className="uw-stale-icon" aria-hidden="true">⚠️</span>
+       <div className="uw-stale-text">
+        <strong>{formatStaleNotice(lastRefreshedMs,nowTick)}</strong>
+        <span className="uw-stale-desc">
+         {!connected
+          ? ' — Local service disconnected. Reconnecting...'
+          : (fetchError
+            ? ` — ${fetchError}`
+            : ' — Session data exceeds 15s refresh threshold')}
+        </span>
+       </div>
+      </div>
+      <button
+       type="button"
+       className="uw-btn uw-btn-retry"
+       onClick={handleRetryConnection}
+       disabled={loading||!!busy}
+      >
+       Retry Connection
+      </button>
+     </div>
+    )}
     {loading&&<div className="uw-loading" role="status">Connecting to local session library...</div>}
     {!loading&&<div className="uw-view">
      <div className="uw-title-row"><div><span className="uw-overline">T6 / INTEGRATED MOTION WORKSPACE</span>
       <h1>{subhead?.label}</h1>
-      <p>{subhead?.description}. {dateMeta}</p></div>
+      <p>{subhead?.description}. {dateMeta}</p>
+      <div className="uw-setup-banner">
+       {passport?.board_measurement ? (
+        <span>SETUP: <strong>{safeMetricValue(passport.board_measurement.measured_square_mm) ?? 'UNAVAILABLE'} mm</strong> self-reported ruler measurement by {passport.board_measurement.measured_by || 'operator'} · Auto-inferred physical scale NOT ESTABLISHED</span>
+       ) : selected ? (
+        <span className="uw-setup-missing">SETUP: Ruler measurement UNAVAILABLE · Self-reported physical calibration pending</span>
+       ) : (
+        <span>SETUP: No session selected · Physical scale unverified</span>
+       )}
+      </div></div>
       <span className="uw-version">KINELAB PT / V1 DEVELOPMENT</span>
      </div>
 
      {view==='overview'&&<>
       <div className="uw-stat-grid">
-       <div className="uw-stat"><span>LOCAL SESSIONS</span><strong>{sessions.length}</strong><small>Test recordings stay separated</small></div>
-       <div className="uw-stat"><span>CAPTURE SLOTS</span><strong>{mode?.count??'—'}</strong><small>Current selected session</small></div>
+       <div className="uw-stat"><span>LOCAL SESSIONS</span><strong>{safeMetricValue(sessions.length)??'0'}</strong><small>Test recordings stay separated</small></div>
+       <div className="uw-stat"><span>CAPTURE SLOTS</span><strong>{mode?.count||'UNAVAILABLE'}</strong><small>Current selected session</small></div>
        <div className="uw-stat"><span>STATUS</span><strong className="uw-stat-word">{mode?.badge??'NO SESSION'}</strong><small>No physical accuracy claim</small></div>
        <div className="uw-stat"><span>NATIVE JOB</span><strong className="uw-stat-word">{job?.state?.toUpperCase()??'IDLE'}</strong><small>Only native passes count</small></div>
       </div>
@@ -383,7 +653,7 @@ export default function UnifiedApp(){
          detail="No test clips will be presented as calibrated clinical recordings."/>
         <div className="uw-checklist">
          {Object.entries(detail?.sources||{}).map(([name,present])=><div key={name}>
-          <span>{name}</span><Pill tone={present?'present':'neutral'}>{present?'Available':'Missing'}</Pill>
+          <span>{name}</span><Pill tone={present?'present':'neutral'}>{present?'Available':'UNAVAILABLE'}</Pill>
          </div>)}
          {!detail&&<EmptyState headline="No selected session" detail="Create a new real session in the Sessions tab."/>}
         </div>
@@ -393,6 +663,7 @@ export default function UnifiedApp(){
 
      {view==='live'&&<LiveTrackerStudio
        token={activeToken}
+       onRecordingBusy={setRecordingBusy}
        onSessionCreated={sid=>{
          refreshSessions();
          setSelected(sid);
@@ -404,30 +675,27 @@ export default function UnifiedApp(){
       <div className="uw-two">
        <Box><CardHeading eyebrow="NEW LOCAL WORKSPACE" heading="Create a recording session"
          detail="No camera opens and no files are registered until you explicitly request them."/>
-        <div className="uw-form-inline">
-         <Field label="Unique session ID"><input value={newId}
-          onChange={event=>setNewId(event.target.value)}
-          placeholder="e.g. gait-pilot-01" maxLength={100}/></Field>
-         <button className="uw-btn primary" onClick={newSession} disabled={!!busy}>Create session</button>
-        </div>
+         <SessionMetadataSetup sessionId={newId} onSessionIdChange={setNewId}
+          onCreate={newSession} busy={!!busy}/>
         <p className="uw-help">Session IDs stay under the local projects folder. Existing files are never overwritten.</p>
        </Box>
        <Box><CardHeading eyebrow="CURRENT SESSION" heading={selected||'None'}
         detail={mode?.badge+' · '+(mode?.count??'0 / 6')+' source recordings'}/>
         <div className="uw-actions">
          <button className="uw-btn" disabled={!selected} onClick={()=>openNative('folder')}>Open local folder</button>
-         <button className="uw-btn" disabled={!selected} onClick={()=>openNative('capture')}>Open Capture Station</button>
+          <button className="uw-btn" disabled>Open Capture Station</button>
         </div>
+         <p role="status" className="uw-help">PARTICIPANT_RECORDING_BLOCKED: recording requires an independently approved privacy, consent, physical-validation and clinical-use protocol.</p>
        </Box>
       </div>
       <Box><CardHeading eyebrow="LOCAL LIBRARY" heading="Your session inventory"
        detail="Select a row to open its capture, processing and reports status."/>
        <div className="uw-list">{sessions.map(session=>{
         const s=formatSession(session);
-        return <button className={'uw-session-row '+(selected===session.id?'chosen':'')}
+        return <button className={'uw-session-row '+(isSessionActive(session,selected)?'chosen':'')}
           key={session.id} onClick={()=>setSelected(session.id)}>
           <div><strong>{session.id}</strong><small>{session.kind} · {session.status}</small></div>
-          <Pill tone={session.kind==='test-only'?'warning':session.status==='registered'?'present':'neutral'}>{s.badge}</Pill>
+          <Pill tone={session.kind==='test-only'?'warning':s.badge==='SYNTHETIC'?'warning':s.badge==='UNVERIFIED'?'warning':s.badge==='REGISTERED'?'present':'neutral'}>{s.badge}</Pill>
           <span>{s.count} sources</span><em>→</em>
          </button>;
        })}
@@ -436,6 +704,8 @@ export default function UnifiedApp(){
      </>}
 
      {view==='capture'&&<GuidedCaptureWizard
+        key={selected}
+        onCorrectMetadata={correctMetadata}
        detail={detail}
        selectedSession={selected}
        activeSession={active}
@@ -476,7 +746,7 @@ export default function UnifiedApp(){
           ['Manually observed sync cues',detail?.sources?.['sync-observations.json']],
           ['Native Pose2Sim run manifest',detail?.sources?.['run.json']],
          ].map(([label,value])=><div key={label}><span>{label}</span>
-          <Pill tone={value?'present':'neutral'}>{value?'File exists':'Missing'}</Pill></div>)}</div>
+          <Pill tone={value?'present':'neutral'}>{value?'File exists':'UNAVAILABLE'}</Pill></div>)}</div>
        </Box>
        <Box><CardHeading eyebrow="MANUAL FRAME REVIEW" heading="Observe synchronization cues"
         detail="Existing native two-camera cue reviewer verifies the exact displayed video frame."/>
@@ -487,7 +757,7 @@ export default function UnifiedApp(){
       </div>
      </>}
 
-     {view==='motion'&&<div className="uw-motion-slot"><MotionApp sessionId={selected} token={activeToken}/></div>}
+     {view==='motion'&&<div className="uw-motion-slot"><MotionApp key={selected} sessionId={selected} token={activeToken}/></div>}
 
      {view==='analysis'&&<>
       <div className="uw-two">
@@ -495,16 +765,20 @@ export default function UnifiedApp(){
         detail="Unvalidated foot-motion proposals, annotated sample videos and human observations."/>
         <div className="uw-analysis-data">
          {(analysis?.gait?.candidates||[]).map(v=><div key={v.role}>
-          <span>{v.role}</span><strong>{v.count} extrema</strong></div>)}
+          <span>{v.role}</span><strong>{safeMetricValue(v.count)??'UNAVAILABLE'} extrema</strong></div>)}
         </div>
-        <Pill tone="warning">{analysis?.gait?.status==='unvalidated_candidates'?'UNVALIDATED / TEST ONLY':'NO SAMPLE'}</Pill>
+        <Pill tone="warning">{analysis?.gait?.status==='unvalidated_candidates'?'UNVALIDATED / TEST ONLY':'UNAVAILABLE'}</Pill>
         <p className="uw-help">These extrema are not confirmed heel strikes, toe-offs or step counts.</p>
        </Box>
        <Box><CardHeading eyebrow="SYNTHETIC EXERCISE MODULE" heading="Squat phase detection"
         detail="Tested algorithm; awaiting real, manually reviewed side-view squat footage."/>
-        <div className="uw-analysis-data"><div><span>Algorithm</span><strong>2D phase / repetition</strong></div>
-        <div><span>Test status</span><strong>15 focused checks passed</strong></div>
-        <div><span>Physical validation</span><strong>Not established</strong></div></div>
+        <div className="uw-analysis-data">
+         <div><span>Protocol</span><strong>{DEFAULT_PRESETS[EXERCISE_TYPES.SQUAT]?.name ?? 'Squat'}</strong></div>
+         <div><span>Target ROM</span><strong>{formatExerciseMetric(DEFAULT_PRESETS[EXERCISE_TYPES.SQUAT]?.targetROM, EXERCISE_TYPES.SQUAT) ?? 'UNAVAILABLE'}</strong></div>
+         <div><span>Algorithm</span><strong>2D phase / repetition</strong></div>
+         <div><span>Evidence status</span><strong>Research only</strong></div>
+         <div><span>Physical validation</span><strong>Not established</strong></div>
+        </div>
         <Pill tone="warning">SYNTHETIC TESTS ONLY</Pill>
         <p className="uw-help">No real squat counts, joint angles or clinical outcomes are fabricated.</p>
        </Box>
@@ -519,6 +793,7 @@ export default function UnifiedApp(){
      </>}
 
      {view==='reports'&&<ReportStudio
+       key={selected}
        sessions={sessions}
        selectedSession={selected}
        reports={reports}
@@ -527,8 +802,12 @@ export default function UnifiedApp(){
        onDownloadReport={downloadReport}
        onGenerateReports={handleGenerateReports}
        onCompareSessions={handleCompareSessions}
+       onLoadBackupSchedule={loadBackupSchedule}
        onCreateBackup={handleCreateBackup}
        onRestoreBackup={handleRestoreBackup}
+       onLoadManualAssessmentContext={loadManualAssessmentContext}
+       onPublishManualAssessment={publishManualAssessment}
+ onEvidenceExportRequest={evidenceExportRequest}
        onOpenFolder={()=>openNative('folder')}
      />}
 

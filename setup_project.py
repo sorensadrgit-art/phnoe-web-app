@@ -1,23 +1,37 @@
 """Initialize a clean Windows Pose2Sim phone + webcam project, preserving packaged demos."""
+import argparse
+import json
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
-import argparse, json
+
 import Pose2Sim
 import rtoml
-from session_contract import ROLES, sha256_file, validate_session
+
+from session_contract import ROLES, sha256_file, strict_json_loads, validate_session, validate_session_metadata
+from take_acceptance import acceptance_lease, checked_path, require_no_pending
 
 ROOT=Path(__file__).resolve().parent
 SAMPLE=Path(Pose2Sim.__file__).parent/"Demo_SinglePerson"/"Config.toml"
 PROJ=ROOT/"projects"/"kinelab-dualcam"
 DIRS=["raw","videos","exports","calibration/intrinsics/cam01","calibration/intrinsics/cam02","calibration/extrinsics"]
-def register_captures(project, session_id, kind="real"):
+def register_captures(project, session_id, kind="real", *, metadata=None):
+    with acceptance_lease(project):
+        require_no_pending(project)
+        return _register_captures_locked(project, session_id, kind, metadata=metadata)
+
+
+def _register_captures_locked(project, session_id, kind="real", *, metadata=None):
+    """Fixed writer for callers already holding the shared session lease."""
+    project=Path(project)
+    require_no_pending(project)
     captures={}
     for role in ROLES:
         path=project/"raw"/(role+".mp4")
         if not path.is_file():raise ValueError("INPUT_MISSING: "+str(path))
         captures[role]={"path":path.relative_to(project).as_posix(),"sha256":sha256_file(path)}
     data={"schema":"kinelab.session.v1","session_id":session_id,"kind":kind,"subject_count":1,
-          "camera_ids":["cam01","cam02"],"created_at":datetime.now(timezone.utc).isoformat(),"captures":captures}
+          "camera_ids":["cam01","cam02"],"created_at":datetime.now(UTC).isoformat(),"captures":captures}
+    if metadata is not None:data["metadata"]=validate_session_metadata(metadata)
     validate_session(data,project)
     out=project/"session.json"
     if out.exists():raise ValueError("OUTPUT_EXISTS: "+str(out))
@@ -29,12 +43,17 @@ def main():
     p.add_argument("--project",type=Path,default=PROJ)
     p.add_argument("--session-id")
     p.add_argument("--kind",choices=("real","demo"),default="real")
+    p.add_argument("--metadata-json",help="Explicit confirmed opaque kinelab.session-metadata.v1 object; never inferred")
     p.add_argument("--register-captures",action="store_true",help="Register the six raw/<role>.mp4 files in an existing project")
     a=p.parse_args()
-    project=a.project.resolve()
+    metadata=None
+    if a.metadata_json is not None:
+        try:metadata=validate_session_metadata(strict_json_loads(a.metadata_json))
+        except (ValueError,TypeError) as error:p.error(str(error))
+    project=checked_path(a.project)
     if a.register_captures:
         if not (project/"Config.toml").is_file():p.error("Missing Config.toml")
-        try:register_captures(project,a.session_id or project.name,a.kind)
+        try:register_captures(project,a.session_id or project.name,a.kind,metadata=metadata)
         except ValueError as error:p.error(str(error))
         print("CAPTURES_REGISTERED="+str(project/"session.json"));return
     if project.exists():
@@ -58,6 +77,7 @@ def main():
               "camera_ids":["cam01","cam02"],"created_at":None,
               "captures":{role:{"path":"raw/"+role+".mp4","sha256":None} for role in ROLES},
               "status":"not configured; place all six originals in raw and run --register-captures"}
+    if metadata is not None:template["metadata"]=metadata
     (project/"session-template.json").write_text(json.dumps(template,indent=2),encoding="utf-8")
     (project/"raw"/"README.txt").write_text(
       "Provide: cam01_intrinsics (phone), cam02_intrinsics (webcam), cam01_board, cam02_board, cam01_trial, cam02_trial. "

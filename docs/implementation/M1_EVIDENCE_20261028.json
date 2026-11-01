@@ -1,0 +1,632 @@
+{
+  "schema": "kinelab.m1.containment-evidence.v1",
+  "checks": {
+    "captured_at_utc": "2026-10-28T22:39:12.982076+00:00",
+    "head": "7efd108caf4244d10672014a9cb0f7afceb253ff",
+    "branch": "feat/kinelab-m1-containment-20261028",
+    "dirty": true,
+    "staged_files": 0,
+    "initial_files_preserved": 23,
+    "initial_snapshot_hashes_match": true,
+    "historical_audit_unchanged": true,
+    "lockfiles_unchanged": true,
+    "diff_check": "PASS",
+    "package_crc_hash_size_source_checks": "PASS",
+    "package_sha256": "86d4914604011b357f356c3ae5cb41db887a286e69991a4b6fe31858cf50a182",
+    "archive_bytes": 751419,
+    "owned_fixture_ports_closed": [
+      53544,
+      53545,
+      61255,
+      61256
+    ],
+    "ephemeral_credentials_removed": true,
+    "restore_staging_removed": true,
+    "live_app_or_patient_data_accessed": false,
+    "physical_validation": "BLOCKED_ON_PHYSICAL_EVIDENCE",
+    "clinical_validation": "UNVERIFIED"
+  },
+  "approval_scope": "M1 Tasks 1-3 only",
+  "result_acceptance": "PENDING",
+  "python": {
+    "run": 258,
+    "passed": 256,
+    "skipped": 2,
+    "failures": 0,
+    "errors": 0,
+    "version": "3.13.16",
+    "opensim": "4.6-2026-06-22-85aaf64",
+    "pose2sim": "0.10.49",
+    "remaining_warnings": "Two Tkinter destructor errors and Tcl deallocation warning"
+  },
+  "node": {
+    "declared_passed": 50,
+    "separate_gait_passed": 8,
+    "failures": 0
+  },
+  "builds": {
+    "desktop": "PASS with chunk warning",
+    "cloud": "PASS with chunk warning"
+  },
+  "browser": {
+    "isolated_only": true,
+    "camera_fixture": "denied; no real devices",
+    "packaged_api_checks_passed": 12,
+    "original_fixture_files_unchanged": 10,
+    "cloud_camera_calls": 0,
+    "cloud_api_calls": 0,
+    "uncaught_page_errors": 0,
+    "keyboard": "focus + Enter on changed controls; not full accessibility",
+    "download_delivery": "CANCELED; NOT VERIFIED",
+    "synthetic_payload_labels": "verified"
+  },
+  "package": {
+    "schema": "kinelab.m1.package-check.v1",
+    "head": "7efd108caf4244d10672014a9cb0f7afceb253ff",
+    "source_state": "dirty-uncommitted",
+    "archive": "dist\\KineLabPT-v1.0.0-windows-x64.zip",
+    "sha256": "86d4914604011b357f356c3ae5cb41db887a286e69991a4b6fe31858cf50a182",
+    "zip_members": 55,
+    "verified_manifest_files": 54,
+    "verified_bytes": 1994539,
+    "source_bytes_match": true,
+    "missing_required_modules": [
+      "app/run_pipeline.py",
+      "app/launch_sync_review.py"
+    ],
+    "runtime_models_ffmpeg_bundled": false,
+    "clean_install_verified": false,
+    "physical_validation": "BLOCKED_ON_PHYSICAL_EVIDENCE",
+    "clinical_validation": "UNVERIFIED"
+  },
+  "source_sha256": {
+    "backup_manager.py": "1520782481e5f692e9b44dafdbe98085585afe32de8f4c31958aeb9d6827cd12",
+    "docs/implementation/CODEX_DESKTOP_RESUME_20261028.md": "4e25cfe2156b658ed4c352cba4a0fd88f7c2bb78fbc96e184e2f25228ec1e3b5",
+    "docs/implementation/DECISION_REGISTER.md": "b608c95a20941283b03d349229dc6b8ad1210c50de9017e9e9300f07ce53fac9",
+    "docs/implementation/M0_BASELINE_20261028.md": "e0a44f7e20544f4b58450edcfcd147f91f8c3fec356e0a0b1602ed9ace6c1ab8",
+    "docs/implementation/M0_EVIDENCE_20261028.json": "782de2263381db686998e6b07710d79ac9c4822e79c5535ca7141ec2f3b7f858",
+    "docs/implementation/M1_CODING_DIRECTIVE.md": "d652fbe59af87bce08d8f68c1dbffdd50dd55b399e7ef5f49c00f576a4b9eb51",
+    "docs/implementation/M1_RESULT_REVIEW_20261028.md": "647f9b67585bbe5914617831e6174228a266758c42317a6275fa52e0c94a7ea4",
+    "docs/implementation/M1_SCOPED_PLAN_20261028.md": "f44f90ff38de3179a3c11810e337a6c18d0f4e9b827cf6e6f5537f00771c202d",
+    "docs/implementation/MASTER_PLAN.md": "e92c1b9b4185f5efe1214e73d4a9e99d050264d4f94c9e680c4e71b1fcb4e2fc",
+    "docs/implementation/TASK_BOARD.md": "7dc1865d3a234a416ad11058f7088dab0bd6c0393fc3e8ffb83ab9928c2c6dc6",
+    "docs/implementation/VERIFICATION_LOG.md": "7da449098d268fa82689cc28e70d5de170c210c9d48c5775002249557fed8e27",
+    "docs/implementation/evidence/m0_boundary_probes.py": "89ab84ad259b2846ae803486b4f524b2b776d21a9f1fdc9952f103b4882e7543",
+    "report_builder.py": "7aa8a8e8b6b43392f7a4c19e223231f5c8d82eb413e4aa38338a5c01683d9e56",
+    "session_index.py": "1bed5f475b497ea1aeb8fca1654a7f4eca5d63d8f3acb0a344523713a9d27b98",
+    "session_library.py": "9a260983bac044597d8989e053136016a6622020d542dd2740d26e6a5c95d3e3",
+    "t6_service.py": "8df23314a208413b0a9a0b517a925b7642bed0250000a846550cacc65b884c2e",
+    "tests/test_backup_manager.py": "172b3b9796aa321ba909bfbdcc55030eaf1c671da36a2759516b51205b36bce0",
+    "tests/test_capture_station.py": "8dd4bf227c4c9293779ad2f7c5199b408db98f8ebe0b5ae69c59e3d4de2e23bc",
+    "tests/test_export_motion.py": "d25f18f44d3915033ade532e3a7b267de84d07d2f841059bfe541c61cef37a87",
+    "tests/test_live_session_api.py": "73e079a7f264a9b315fd519861b8afa228bd5551393861fe74368f12a72781b3",
+    "tests/test_m1_acceptance.py": "c546a61a134a13e1fa7b94ff5cc273c73bcea77dbe5f4944d4ec48f82e707d8c",
+    "tests/test_m1_containment.py": "a7b03c90dad8b094aeb86d5ddb8ec81db224cac2f6782ec70c1f09bf54314240",
+    "tests/test_report_builder.py": "b5fe8e3d8171e0d1c4d92b21df4076b4eb68b2ebc4e6a2921998023001e15078",
+    "tests/test_t6_server.py": "4b2892174266387d7012b22de8d00a2b6c209bfe9939f86a40571194e3b3ece5",
+    "tests/test_t6_service.py": "db4a84000c569b8a77b8f036a970fdb0a272ade0d199c590233a6c6d2944f2b3",
+    "viewer/package.json": "2fd4f47f48b4af89afe51eb0795bc45d6b735b106876313e40b3f19f475fa6aa",
+    "viewer/src/LiveSetSummaryModal.jsx": "73b8c1e0e1e7d4b69b7d66fb38f8dec4ef4cfa0147e29cb0a54ab5bd8a6eadd6",
+    "viewer/src/LiveTrackerStudio.jsx": "f6213051964736c93e03c1ed3d7c896c07d25e71cfc748c1aafd1babb4e1d3af",
+    "viewer/src/ReportStudio.jsx": "62954dfe177687b77b8b9fedda273322fd0f13c3ae1d96328c2d342591e79148",
+    "viewer/src/UnifiedApp.jsx": "94cd41cd3108450f73c423f20941c2279f4110836b5cf37f411cb954731aa455",
+    "viewer/src/liveSource.test.js": "098f7fb662f25ca04d7df90a6bbdf47514c23076b5331217b6f3f3b04e42564c",
+    "viewer/src/unifiedModel.js": "b38c7c9ae007f8a70f1060c9dbe8715e9c97c30645baf49904d03e88be09512e",
+    "viewer/src/unifiedModel.test.js": "40e72c6ec43c0975afb730f2df5eab13120d5c7ffc925caed6ecf61c85fd3457"
+  },
+  "local_evidence": {
+    "dist/m1-task3-20261028/acceptance-GREEN.log": {
+      "bytes": 2551,
+      "sha256": "ba1027540cc8d8e0613627892a93ede4637af5767aa7c5de13562bd030882179"
+    },
+    "dist/m1-task3-20261028/acceptance-races-GREEN.log": {
+      "bytes": 2903,
+      "sha256": "68e37af516bcb7a00796fbfebf417dc4f9726ceb4c31e03f71ed17410eb614d4"
+    },
+    "dist/m1-task3-20261028/acceptance-races-RED.log": {
+      "bytes": 4374,
+      "sha256": "449eb543898124e08c311cf70f9ea5b5caa1701779d8df6a6fa9d7daedbe1657"
+    },
+    "dist/m1-task3-20261028/acceptance-RED-corrected.log": {
+      "bytes": 13012,
+      "sha256": "9516563356f84190592b55eb851b4e3b058cbddac9fb62ee3bbec28da3efa691"
+    },
+    "dist/m1-task3-20261028/acceptance-RED.log": {
+      "bytes": 16186,
+      "sha256": "577ff1c218166ed6ff9244d38802e12871291179f5a8505fd90f388b2e8d1829"
+    },
+    "dist/m1-task3-20261028/before-hashes.json": {
+      "bytes": 2465,
+      "sha256": "5682636915533a3efeb8befb1c201ee1fc1f5536160005c96d653f2b1f929fc2"
+    },
+    "dist/m1-task3-20261028/before.patch": {
+      "bytes": 67495,
+      "sha256": "abc76ec2af3d8cb7063867800294823ae4ba30ffbe92c9f67fdcd18295bbe20e"
+    },
+    "dist/m1-task3-20261028/browser-final-original-hashes.json": {
+      "bytes": 1300,
+      "sha256": "d5e04497f8df2f22c954316623dcda3039b8aa2580dd1e2f19ae44370731f9c2"
+    },
+    "dist/m1-task3-20261028/browser-original-hashes.json": {
+      "bytes": 1300,
+      "sha256": "d5e04497f8df2f22c954316623dcda3039b8aa2580dd1e2f19ae44370731f9c2"
+    },
+    "dist/m1-task3-20261028/browser_final_fixture.py": {
+      "bytes": 4620,
+      "sha256": "08c75cd8e876d5a90a58800494ab641749449ca91e41f779dc3c5c04b0ec29c4"
+    },
+    "dist/m1-task3-20261028/browser_final_receipt.py": {
+      "bytes": 2709,
+      "sha256": "69fc08795dafe3109a55ff9cdb11be6e6a485616da206765477e64f65d004e74"
+    },
+    "dist/m1-task3-20261028/browser_fixture.py": {
+      "bytes": 4507,
+      "sha256": "ebaec52c22899873f41392ba3e54de84ef456e241ea3dc323a11c9cf4c5ea195"
+    },
+    "dist/m1-task3-20261028/browser_receipt.py": {
+      "bytes": 2661,
+      "sha256": "28d516f8ce452cdf24de39909c64496accef891801e6648c817d30f313ba4e26"
+    },
+    "dist/m1-task3-20261028/build-cloud-FINAL.log": {
+      "bytes": 1031,
+      "sha256": "196fe07a280b599a86f6ccfc3db59dd59c67915c7e975ce7678cfce40bdcd294"
+    },
+    "dist/m1-task3-20261028/build-cloud.log": {
+      "bytes": 1031,
+      "sha256": "3306e92aa3e1a04cbbc65affb4bdc5c44ba6a2332e98cd30cf90fc53d4dfc69c"
+    },
+    "dist/m1-task3-20261028/build-desktop-FINAL.log": {
+      "bytes": 1185,
+      "sha256": "b16d6e4a242747bcddd517dc9b0ffacf95fab1d75b6d080853e56c691dea572b"
+    },
+    "dist/m1-task3-20261028/build-desktop.log": {
+      "bytes": 1185,
+      "sha256": "753cef8480201cfdad30ee615eff6cb6760af36647e562ed464213fe9b5c043a"
+    },
+    "dist/m1-task3-20261028/cloud-browser-receipt.json": {
+      "bytes": 8141,
+      "sha256": "7d1018280f87748e8807f87000f372d5e4968a15cbf20bf653ee9c3c2e6aff4f"
+    },
+    "dist/m1-task3-20261028/cloud-final-browser-receipt.json": {
+      "bytes": 4443,
+      "sha256": "f38ebb8e8b7a5d734d14d87e4d0e8148320dce8ffbc6f7ffee02d96e3c9db5b6"
+    },
+    "dist/m1-task3-20261028/cloud-synthetic-summary.png": {
+      "bytes": 84318,
+      "sha256": "2d45374c25af5b316f3f895fb1d9ab1ff3bf4b409b747e12eae6c607382f9c88"
+    },
+    "dist/m1-task3-20261028/cloud-synthetic.png": {
+      "bytes": 320819,
+      "sha256": "db8a898d0338ba01409fa4792c293215f56b0b4a873fb91412a29a3feb63dfa6"
+    },
+    "dist/m1-task3-20261028/desktop-browser-receipt.json": {
+      "bytes": 12081,
+      "sha256": "53ecd9d202e3e4d93b74dd6839c10579fc0a4dad783714d21deffa5528764994"
+    },
+    "dist/m1-task3-20261028/desktop-camera-preview.png": {
+      "bytes": 176083,
+      "sha256": "d1ba7aea0e746dd826b631ed7d860d9969c878e2e9e127228e92b239518c7edd"
+    },
+    "dist/m1-task3-20261028/desktop-final-browser-receipt.json": {
+      "bytes": 7852,
+      "sha256": "f871ce3ca05616f2bb27f289794a0def1b18aabb75fe5a75b73f41271bfc5ee4"
+    },
+    "dist/m1-task3-20261028/desktop-final-restore.png": {
+      "bytes": 103543,
+      "sha256": "2b81c5b1fcf44e1f930600a452bbab6ff7ccf733fb0ed90c67889f7e39761a27"
+    },
+    "dist/m1-task3-20261028/desktop-legacy-report-refusal.png": {
+      "bytes": 104728,
+      "sha256": "ec1d8d4c741bd009b9bfabe4586883377f696720eb3b293d4e67c10b10ce2aea"
+    },
+    "dist/m1-task3-20261028/desktop-restore-invalid.png": {
+      "bytes": 103984,
+      "sha256": "231516dfec9cd1dee9bb4950f9b139a1a1c9d91bd7e9904f4858b31f27a9e946"
+    },
+    "dist/m1-task3-20261028/desktop-synthetic.png": {
+      "bytes": 199860,
+      "sha256": "16618b7fa5ca9590792c280c530ef5a1ace4b3e4261cf6c03cd63d330a6e63f3"
+    },
+    "dist/m1-task3-20261028/final-checks.json": {
+      "bytes": 861,
+      "sha256": "d8eac33fcc5d5443a781892ac502184bbeb4949f90e74051cadfad6e3698006b"
+    },
+    "dist/m1-task3-20261028/frontend-FINAL.log": {
+      "bytes": 4624,
+      "sha256": "0eb25cb4f691f664f242dc66ff8ef8c1a4dbe0a88547c1871a864a6ca742867a"
+    },
+    "dist/m1-task3-20261028/frontend-GREEN.log": {
+      "bytes": 4621,
+      "sha256": "369d1db23c49bb6a01c64f80b787009eff149f7ff358a58cd4fccad26ff49741"
+    },
+    "dist/m1-task3-20261028/frontend-RED-corrected.log": {
+      "bytes": 9564,
+      "sha256": "5152c56c1fbb85d626a9f3c0593f40e245136ebe8450630a03473aadb4d2205e"
+    },
+    "dist/m1-task3-20261028/frontend-RED.log": {
+      "bytes": 48871,
+      "sha256": "a0ecee523316d0f7a8d22057ca186377b4493b217e286c1fe91aabfc520df8c1"
+    },
+    "dist/m1-task3-20261028/gait-review.log": {
+      "bytes": 853,
+      "sha256": "e2b448c381ef340f3bad2585002004c22d9abb64726c12fc51e985773abb3d13"
+    },
+    "dist/m1-task3-20261028/initial-backup.log": {
+      "bytes": 595,
+      "sha256": "524db0789da4a3e967d1bc1ae79ffc8d14b74bc58afa932fb84240645ebc5bd9"
+    },
+    "dist/m1-task3-20261028/initial-containment.log": {
+      "bytes": 2888,
+      "sha256": "2b20facad91121f511d1003f3aa50ae591e848c38ff752dc2ffcf9a662a1acf4"
+    },
+    "dist/m1-task3-20261028/initial-frontend.log": {
+      "bytes": 4177,
+      "sha256": "95b62fb49c5472c8fcd16da7c987718e502eeef71c8edfc840e60b70e27d9b7e"
+    },
+    "dist/m1-task3-20261028/local-build-preflight.json": {
+      "bytes": 2031,
+      "sha256": "4091351cda2f17bb9a64a98542d2abeb56d3ea01d4d1f1339bfb97cd07f10b1a"
+    },
+    "dist/m1-task3-20261028/package-build-FINAL.log": {
+      "bytes": 1494,
+      "sha256": "0d8af89ffaa76b1ac46a96dcd6a48f1b74304542c039d8b77c7f9feb2a3c3345"
+    },
+    "dist/m1-task3-20261028/package-build.log": {
+      "bytes": 1494,
+      "sha256": "30976b3d3f7bb2fabd42b504483a3cd4863999150c46cb118f8075bc5dbc02c3"
+    },
+    "dist/m1-task3-20261028/package-check.json": {
+      "bytes": 673,
+      "sha256": "0ba340648b99ec96a31fa923f08c9326b53ac6ddf31b0d6a6802c69357a9453d"
+    },
+    "dist/m1-task3-20261028/packaged-api-check.json": {
+      "bytes": 2027,
+      "sha256": "beab6dcfaee38735a50b665e3d6df0aca38fdfc4c2babeb48419b2812cbc4c4d"
+    },
+    "dist/m1-task3-20261028/packaged-api-final-check.json": {
+      "bytes": 2027,
+      "sha256": "beab6dcfaee38735a50b665e3d6df0aca38fdfc4c2babeb48419b2812cbc4c4d"
+    },
+    "dist/m1-task3-20261028/packaged_api_check.py": {
+      "bytes": 3209,
+      "sha256": "b55cb1e05ccf4afdcb3c0b83b37dfbff6893e414d03344c1bdcc36f0118e24b9"
+    },
+    "dist/m1-task3-20261028/packaged_api_final_check.py": {
+      "bytes": 3287,
+      "sha256": "e163dd3524dbcd2c6cf58ecc1f5eeb354eafe443677e8e13535f5fbd5f2d4582"
+    },
+    "dist/m1-task3-20261028/pre-copy-review-package-check.json": {
+      "bytes": 673,
+      "sha256": "4075fb70a741c5b2efa75315b2b552100d07f5f3767b7e7b3e49388de676e9bb"
+    },
+    "dist/m1-task3-20261028/python-final-full.log": {
+      "bytes": 42520,
+      "sha256": "89dba8ec3d450c9767073fe34b3f03ea2326fead1672a9c6de31f7638c40335e"
+    },
+    "dist/m1-task3-20261028/python-initial-full.log": {
+      "bytes": 42668,
+      "sha256": "22525e740ccc413d7c23606b1b760672dba9e4dd6c1851a27efbff60d7592af3"
+    },
+    "dist/m1-task3-20261028/python-verified-full.log": {
+      "bytes": 41584,
+      "sha256": "1bd0297784f98c80a8762b604ac51c5ba83d3658f17a5217380981a5957eff02"
+    },
+    "dist/m1-task3-20261028/verify_package.py": {
+      "bytes": 2726,
+      "sha256": "c9973b91b846c03be8acef17fd8611bd37f4460c1978d4c5edbebd38ace2bd74"
+    }
+  },
+  "limits": [
+    "Owner result acceptance pending",
+    "All B01-B21 catalog blockers unaccepted",
+    "D01-D08 open",
+    "No full M1, clean-install, physical or clinical acceptance",
+    "No native launcher lifecycle rerun",
+    "No independent second-agent review"
+  ],
+  "current_local_engineering_checkpoint": {
+    "schema": "kinelab.current-local-engineering-checkpoint.v1",
+    "status": "BLOCKED_OVERALL",
+    "publication": "ROOT_PUBLISHED_WITH_REVIEWED_NARROW_OUTCOME_ADDENDUM",
+    "historical_m1_scope_preserved": true,
+    "frontend": {
+      "status": "PASS_SCOPED_CURRENT_SOURCE",
+      "tests": {
+        "run": 420,
+        "pass": 420,
+        "fail": 0,
+        "skip": 0,
+        "cancel": 0
+      },
+      "cloud_build_exit": 0,
+      "desktop_build_exit": 0,
+      "owned_seconds": 19.527662,
+      "limits": [
+        "Five selected quality checks only",
+        "Bundle-size/SSR/optional-dependency warnings preserved",
+        "No target-device or release claim"
+      ]
+    },
+    "audit_row": {
+      "status": "INTEGRATED_SCOPED_REGRESSIONS_PASS",
+      "source": {
+        "path": "session_index.py",
+        "bytes": 55242,
+        "sha256": "975692100dbe1ffa5077e9190bcf2517db25ae554deff8b47876f64114c7b985"
+      },
+      "integration_record": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-audit-row-integration-20261101R1/ROOT-INTEGRATION-RECORD-R1.json",
+        "bytes": 2780,
+        "sha256": "fe7e1c6ed74e612f2e922eb61af6234489e3faadf5d0dd245b5013744f890b1e"
+      },
+      "beforeimage": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-audit-row-integration-20261101R1/before/session_index.py",
+        "bytes": 55212,
+        "sha256": "a6c25e7ec5f72ab0d2fa93edb5a291a39803509a089b3712ebd8fb2379b9dccb"
+      },
+      "downstream": {
+        "run": 32,
+        "pass": 32,
+        "fail": 0,
+        "error": 0,
+        "skip": 0,
+        "test_seconds": 8.556,
+        "owned_seconds": 9.9847595,
+        "saved_input_pins": 6241,
+        "artifact_hashes": 15,
+        "drift": 0,
+        "owned_tree": "CLOSED_DRAINED",
+        "independent_review_read_inputs": 31,
+        "all6241_independently_rehashed": false
+      },
+      "usefulness": {
+        "status": "DIAGNOSTIC_ONLY",
+        "lower_summed_percent": 9.3781154,
+        "calls": 256,
+        "row_visits": 65536,
+        "capacity_claim": false
+      },
+      "prior_authored_red_preserved": true
+    },
+    "api_quartet": {
+      "status": "FAIL_UNRESOLVED_CURRENT_SOURCE_DIRECT",
+      "pass": 1,
+      "error": 3,
+      "fail": 0,
+      "skip": 0,
+      "errors": {
+        "CTX05": "TimeoutError",
+        "CTX07": "TimeoutError",
+        "CTX09": "TimeoutError"
+      },
+      "manual": "PASS",
+      "test_seconds": 68.893,
+      "owned_seconds": 73.6468118,
+      "request_timeout_seconds": 6,
+      "owned_cap_seconds": 180,
+      "saved_input_pins": 6251,
+      "artifact_hashes": 15,
+      "source_drift": 0,
+      "owned_tree": "CLOSED_DRAINED",
+      "observer": false,
+      "cache_scope": "Ordinary source-loader fresh external prefix plus-B; not universal import/OS closure proof",
+      "cause": "UNKNOWN"
+    },
+    "browser_console": {
+      "status": "UNRESOLVED_NATIVE_SCHEMA_AND_CLEANUP",
+      "historical_R4": "FAIL_CONSOLE_SCHEMA_UNKNOWN_KEY_AND_CLEANUP_PERMISSIONERROR",
+      "R2_cause": "UNKNOWN",
+      "provider_source": "Corrected immutable archive ranges admitted; installedbinary equivalence not authenticated",
+      "original_R6_controls": "FAIL_SOURCE_SYNTAX_NEVER_EXECUTED",
+      "R6FIX1": "PASS_SCOPED_TEST_ONLY_14_CONTROLS",
+      "planned_captures": {
+        "historical_R5_controls_vs_R4": {
+          "run": 12,
+          "pass": 10,
+          "expected_authored_fail": 2,
+          "error": 0,
+          "skip": 0
+        },
+        "R6FIX1_controls_vs_R5": {
+          "run": 14,
+          "pass": 12,
+          "expected_authored_fail": 2,
+          "error": 0,
+          "skip": 0
+        },
+        "R6FIX1_controls_vs_R6": {
+          "run": 14,
+          "pass": 14,
+          "fail": 0,
+          "error": 0,
+          "skip": 0
+        },
+        "native": "NOT_RUN"
+      },
+      "newer_results": "Controlled captures reconciled by ROOT before publication; native pending",
+      "controls_evidence": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-browser-console-schema-probe-20261101R1/R6/ROOT-CONTROLS-ACCEPTANCE-R2.json",
+        "bytes": 4832,
+        "sha256": "9738f1b8de3b3a6d740c6daa45522975c4fa3276f4ad520c46f2ca495ae8720f"
+      }
+    },
+    "mounted_browser": {
+      "status": "HISTORICAL_R7_MB01_MB07_SCOPED_ACCEPTANCE_RETAINED",
+      "cases": {
+        "MB01": "PASS_SCOPED_R7",
+        "MB02": "PASS_SCOPED_R7",
+        "MB03": "PASS_SCOPED_R7",
+        "MB04": "PASS_SCOPED_R7",
+        "MB05": "PASS_SCOPED_R7",
+        "MB06": "PASS_SCOPED_R7",
+        "MB07": "PASS_SCOPED_R7"
+      },
+      "historical_R5_MB05": "FAIL_PRESERVED",
+      "secondary_camera_requests": 0,
+      "console": {
+        "total": 7,
+        "allowlisted": 5,
+        "omitted": 2,
+        "omitted_content_severity": "UNKNOWN",
+        "zero_console_errors": "UNVERIFIED"
+      },
+      "current_complete_native_browser_acceptance": "NOT_ESTABLISHED"
+    },
+    "package": {
+      "status": "STALE_AFTER_AUDIT_ROW_SOURCE_INTEGRATION_REFRESH_PENDING",
+      "historical": "R4 extraction and existing-host auth/local-only/Ctrl-C/drain scoped acceptance retained",
+      "current_source_package": "NOT_RUN",
+      "current_source_extracted_native_launch": "NOT_RUN",
+      "native_prerequisites_unprovisioned": 9,
+      "clean_host": "BLOCKED"
+    },
+    "numeric_candidate": {
+      "status": "UNINTEGRATED",
+      "baseline_tests": 96,
+      "candidate_tests": 96,
+      "semantics": "PASS_SCOPED",
+      "usefulness": "Approximately4.05% lower smallABBA includescanonicalserialization; no capacity claim"
+    },
+    "recording_capacity": {
+      "status": "FAIL_UNRESOLVED",
+      "chunks": 2250,
+      "frames": 36000,
+      "limit_seconds": 180,
+      "prefix_replay": "INCOMPLETE 576/2048",
+      "whole_operation_60s": "NOT_RUN_EXACT_START_CLOCK"
+    },
+    "parser_candidate": {
+      "status": "REJECTED_NOT_INTEGRATED",
+      "focused_original": 40,
+      "focused_candidate": 40,
+      "canonical_exit": 125,
+      "canonical_seconds": 180.4029685,
+      "result_file": "ABSENT",
+      "original_preserved": true
+    },
+    "full_backend": {
+      "current": "NOT_RUN",
+      "historical": {
+        "run": 1277,
+        "error": 4,
+        "skip": 2,
+        "status": "FAIL_INVALIDATED_SOURCE_CLOSURE"
+      }
+    },
+    "antigravity": {
+      "status": "SOURCE_REPORTS_ONLY_NO_FULL_PROVENANCE_PASS",
+      "R22": {
+        "observed_by_ROOT_report": "Coordinator command exited1; exact command unknown",
+        "provider_report": "INVOCATION invariants claims0shellcommands",
+        "contradiction": "UNRESOLVED",
+        "runtime_credit": "NONE",
+        "model_attestation": "NONE"
+      },
+      "R21": "Historical partialqualification; missingD and timing/output/provenance limitations preserved",
+      "R23": {
+        "status": "SOURCE_RETURNS_READ_HASHED_DESIGN_NOT_ACCEPTED",
+        "input_contract": {
+          "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-antigravity-targeted-review-queues-20261101R23/ROOT-DISPATCH.json",
+          "bytes": 6636,
+          "sha256": "e88c2925f70642a487e40bf9c644dc05a686f9e2c65edc0443f64b0e27642654"
+        },
+        "outputs": [
+          {
+            "name": "agy-owned/A/REVIEW.json",
+            "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-antigravity-targeted-review-queues-20261101R23/agy-owned/A/REVIEW.json",
+            "bytes": 7558,
+            "sha256": "7c1f6a745ca59306bcc692748706e42bcb96fdfdb48ca969f57493d0491b64d6"
+          },
+          {
+            "name": "agy-owned/B/REVIEW.json",
+            "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-antigravity-targeted-review-queues-20261101R23/agy-owned/B/REVIEW.json",
+            "bytes": 7182,
+            "sha256": "b20a4b315a120b0d4037de89446612512e791161362f90469094093dc9f66b39"
+          },
+          {
+            "name": "INVOCATION.json",
+            "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-antigravity-targeted-review-queues-20261101R23/INVOCATION.json",
+            "bytes": 2082,
+            "sha256": "0a294b5311c3cfaa6fa5c77173f88f5fbaec5f086be1d03c788be8c5e795e207"
+          },
+          {
+            "name": "SUMMARY.json",
+            "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-antigravity-targeted-review-queues-20261101R23/SUMMARY.json",
+            "bytes": 3420,
+            "sha256": "ca456fbdf045a787a25f2672318fc9f6341878903e30f4aa72de9a2bffc0b861"
+          }
+        ],
+        "native_tool_history": "NOT_INDEPENDENTLY_INSPECTED",
+        "idle_and_timing": "PROVIDER_REPORTED",
+        "runtime": "NOT_RUN",
+        "passport_design": "UNIMPLEMENTED_INDEPENDENT_REVIEW_PENDING"
+      }
+    },
+    "catalog": {
+      "total": 44,
+      "in_progress": 40,
+      "blocked": 4,
+      "blocked_ids": [
+        "B17",
+        "B21",
+        "R17",
+        "R18"
+      ],
+      "owner_accepted": 0
+    },
+    "decisions": {
+      "D01": "OPEN",
+      "D02": "OPEN",
+      "D03": "OPEN",
+      "D04": "OPEN",
+      "D05": "OPEN",
+      "D06": "OPEN",
+      "D07": "OPEN",
+      "D08": "OPEN"
+    },
+    "clinical": "UNVERIFIED",
+    "physical": "BLOCKED_ON_PHYSICAL_EVIDENCE",
+    "clean_host": "BLOCKED",
+    "release": "NOT_AUTHORIZED",
+    "remaining": [
+      "Direct API failure correction with unchanged6s requests and integrity checks",
+      "Native browser schema/network/cleanup gates; 14 scoped controls passed",
+      "Fresh matching-source package/extraction/native launch",
+      "Current full backend",
+      "Canonical2250chunks/36000frames180s",
+      "Whole2048chunk replay60s",
+      "Security/retention/recovery",
+      "Nine native provisions",
+      "Camera/reference/EMG/Blender",
+      "Physical/clinical and owner decisions"
+    ],
+    "observed_at": "2026-11-01T17:04:01.279Z",
+    "evidence_index": {
+      "draft": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-checkpoint-status-reconciliation-20261101R10/DRAFT.json",
+        "bytes": 23888,
+        "sha256": "575d817addc2b779370982d078562285419ba908683ea09623304f020be2f756"
+      },
+      "independent_review": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-checkpoint-r10-independent-review-20261101R1/REVIEW.json",
+        "bytes": 17141,
+        "sha256": "af6685812c82d63c78500f202b8115de15932c73b48cc29a4549c38e20546aed"
+      },
+      "controls": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-browser-console-schema-probe-20261101R1/R6/ROOT-CONTROLS-ACCEPTANCE-R2.json",
+        "bytes": 4832,
+        "sha256": "9738f1b8de3b3a6d740c6daa45522975c4fa3276f4ad520c46f2ca495ae8720f"
+      },
+      "api_failure": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-original-four-api-direct-current-source-20261101R1/ROOT-API-FAILURE-RECORD-R1.json",
+        "bytes": 3826,
+        "sha256": "61b57ef4c2dc4b9b9df9acea0761c34d73f31e913fc8189c3d018d8afb007848"
+      },
+      "downstream": {
+        "path": "C:/Users/soren/Documents/Projects/KineLab-PT-Production-Agent-Workspace/dist/fullproject-20261028/root-audit-row-current-source-downstream-20261101R1/ROOT-DOWNSTREAM-ACCEPTANCE-R1.json",
+        "bytes": 3951,
+        "sha256": "685d83bfc1b947758434c35be013145fbe85ad3e6fa2c5fd1709d8f7cbf48492"
+      }
+    }
+  }
+}

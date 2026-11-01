@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { roleStatus, shortHash } from './unifiedModel.js';
+import { MetadataConfirmationSummary } from './SessionMetadataSetup.jsx';
+import { METADATA_FIELDS, buildSessionMetadata, currentMetadataState, metadataFieldsValid, unavailableMetadataReason } from './sessionMetadataSetup.js';
 
 const ROLE_META = {
   cam01_intrinsics: { title: 'Phone · Intrinsic Calibration', camera: 'Phone (Cam 1)', roleType: 'intrinsics', desc: 'Hold printed 20mm checkerboard at diverse tilts and distances across the entire frame.' },
@@ -17,22 +19,62 @@ export default function GuidedCaptureWizard({
   cameraState,
   busy,
   onImportPhone,
-  onStartCapture,
   onStopCapture,
   onSaveBoard,
   onRegister,
-  onOpenNative
+  onOpenNative,
+  onCorrectMetadata
 }) {
   const [boardMm, setBoardMm] = useState('');
   const [operator, setOperator] = useState('');
-  const [flightCheck, setFlightCheck] = useState({
+  const emptyFlightCheck = () => ({
     composition: false,
     focusLocked: false,
     boardPrinted: false,
     syncCuesPlanned: false,
   });
+  const [flightReport, setFlightReport] = useState({ key: null, checks: emptyFlightCheck() });
   const [deviceList, setDeviceList] = useState(null);
   const [probingDevices, setProbingDevices] = useState(false);
+  const [correction, setCorrection] = useState({ key: '', fields: {}, confirmed: false, error: '' });
+  const current = detail && detail.id === selectedSession ? currentMetadataState(detail, selectedSession) : null;
+  const unavailableReason = current ? '' : unavailableMetadataReason(detail, selectedSession);
+  // The draft is bound to the session and metadata context it was prefilled from;
+  // a new context discards it instead of rebinding it to different current metadata.
+  const correctionKey = current ? selectedSession + ':' + current.context : '';
+  const flightCheckKey = current ? JSON.stringify([
+    selectedSession, current.context, current.metadata.protocol_id, current.metadata.protocol_version,
+  ]) : '';
+  // Discard the prior report immediately, including on A -> B -> A transitions.
+  // These are operator reports, never calibration or permission to record.
+  if (flightReport.key !== flightCheckKey) {
+    setFlightReport({ key: flightCheckKey, checks: emptyFlightCheck() });
+  }
+  const flightCheck = flightReport.key === flightCheckKey ? flightReport.checks : emptyFlightCheck();
+  const draft = correction.key === correctionKey ? correction : {
+    key: correctionKey, confirmed: false, error: '',
+    fields: current ? Object.fromEntries(METADATA_FIELDS.map(name => [name, current.metadata[name]])) : {},
+  };
+  const correctionChanged = !!current && METADATA_FIELDS.some(name => draft.fields[name] !== current.metadata[name]);
+  const canCorrect = !!current && !busy && typeof onCorrectMetadata === 'function'
+    && metadataFieldsValid(draft.fields) && correctionChanged && draft.confirmed === true;
+  const updateCorrection = (name, value) => {
+    if (busy || !current) return;
+    setCorrection(prev => {
+      const base = prev.key === correctionKey ? prev : draft;
+      return { ...base, fields: { ...base.fields, [name]: value }, confirmed: false, error: '' };
+    });
+  };
+  const confirmCorrection = checked => {
+    if (busy || !current) return;
+    setCorrection(prev => ({ ...(prev.key === correctionKey ? prev : draft), confirmed: checked === true }));
+  };
+  const submitCorrection = event => {
+    event.preventDefault();
+    if (!canCorrect) return;
+    try { return onCorrectMetadata(buildSessionMetadata(draft.fields, true)); }
+    catch (failure) { setCorrection(prev => ({ ...(prev.key === correctionKey ? prev : draft), error: failure.message })); }
+  };
 
   const probeDevices = async () => {
     setProbingDevices(true);
@@ -55,10 +97,14 @@ export default function GuidedCaptureWizard({
   const isRealDraft = activeSession?.kind === 'real' && activeSession?.status === 'draft';
   const roles = detail?.roles || [];
   const issues = detail?.issues || [];
-  const readyToRegister = detail?.ready_to_register;
+  const readyToRegister = detail?.ready_to_register === true && roles.length === 6 && issues.length === 0;
 
   const toggleCheck = key => {
-    setFlightCheck(prev => ({ ...prev, [key]: !prev[key] }));
+    if (!current) return;
+    setFlightReport(prev => {
+      const checks = prev.key === flightCheckKey ? prev.checks : emptyFlightCheck();
+      return { key: flightCheckKey, checks: { ...checks, [key]: !checks[key] } };
+    });
   };
 
   const handleSaveBoard = () => {
@@ -69,6 +115,46 @@ export default function GuidedCaptureWizard({
 
   return (
     <div className="uw-capture-wizard">
+      <p role="status" className="uw-help">PARTICIPANT_RECORDING_BLOCKED: recording requires an independently approved privacy, consent, physical-validation and clinical-use protocol.</p>
+      <MetadataConfirmationSummary sessionId={selectedSession}
+        confirmation={detail && detail.id === selectedSession ? detail.metadata_confirmation : null}/>
+      <section className="uw-card" aria-label="Current effective session metadata">
+        {current ? <>
+          <p role="status">Current effective metadata: AVAILABLE · operator reported</p>
+          <dl>
+            <dt>Subject ID</dt><dd>{current.metadata.subject_id}</dd><dt>Operator ID</dt><dd>{current.metadata.operator_id}</dd>
+            <dt>Task ID</dt><dd>{current.metadata.task_id}</dd><dt>Protocol</dt><dd>{current.metadata.protocol_id} · {current.metadata.protocol_version}</dd>
+            <dt>Laterality</dt><dd>{current.metadata.laterality}</dd><dt>Confirmed at</dt><dd>{current.metadata.confirmed_at}</dd>
+          </dl>
+          <p className="uw-help">Metadata context SHA-256 {current.context} · {current.state.head
+            ? 'Revision head SHA-256 ' + current.state.head.sha256 : 'No published revision; the initial metadata is current'} ·
+            Origin session.json SHA-256 {current.state.origin.sha256}.</p>
+          <p className="uw-help">The persisted initial confirmation above stays unchanged. Operator corrections do not establish identity authentication, protocol approval, physical validity or permission to record.</p>
+        </> : <p role="status" className="uw-help">
+          Current effective metadata: UNAVAILABLE. No verified current metadata is available for this session, so no value is shown as current and the initial confirmation is not used as a fallback. Corrections are disabled. {unavailableReason}
+        </p>}
+      </section>
+      {current && <form onSubmit={submitCorrection} aria-label="Operator metadata correction" className="uw-card uw-form-inline">
+        <p className="uw-help">Correct the current opaque identifiers only. Do not enter names, contact details or medical record numbers.
+          A correction is an operator report, publishes a new audited revision and never rewrites the original session file.</p>
+        {[
+          ['subject_id', 'Corrected subject ID'], ['operator_id', 'Corrected operator ID'], ['task_id', 'Corrected task ID'],
+          ['protocol_id', 'Corrected protocol ID'], ['protocol_version', 'Corrected protocol version'],
+        ].map(([name, label]) => <label key={name} className="uw-field"><span>{label}</span>
+          <input name={'correction_' + name} value={draft.fields[name] ?? ''} disabled={!!busy} maxLength={100} autoComplete="off"
+            onChange={event => updateCorrection(name, event.target.value)}/></label>)}
+        <label className="uw-field"><span>Corrected laterality</span><select name="correction_laterality"
+          value={draft.fields.laterality ?? ''} disabled={!!busy} onChange={event => updateCorrection('laterality', event.target.value)}>
+          <option value="">Select laterality</option><option value="left">Left</option><option value="right">Right</option>
+          <option value="bilateral">Bilateral</option><option value="not_applicable">Not applicable</option>
+        </select></label>
+        <label><input type="checkbox" name="metadata_correction_confirmed" checked={draft.confirmed === true} disabled={!!busy}
+          onChange={event => confirmCorrection(event.target.checked)}/>
+          I checked these corrected opaque identifiers for this session and its current metadata context.</label>
+        {!correctionChanged && <p className="uw-help">Change at least one identifier to submit a correction.</p>}
+        {draft.error && <p role="alert">{draft.error}</p>}
+        <button type="submit" className="uw-btn primary" disabled={!canCorrect}>Publish metadata correction</button>
+      </form>}
       {/* Flight Check Pre-Capture Bar */}
       <div className="uw-card uw-flight-check-card">
         <div className="uw-card-header">
@@ -78,7 +164,7 @@ export default function GuidedCaptureWizard({
             <p>Ensure authentic optical conditions before recording or importing videos.</p>
           </div>
           <span className={`uw-pill ${allFlightChecksPass ? 'uw-pill-present' : 'uw-pill-warning'}`}>
-            {allFlightChecksPass ? 'Checklist Verified' : 'Checklist Incomplete'}
+            {allFlightChecksPass ? 'Operator checklist reported' : 'Checklist Incomplete'}
           </span>
         </div>
 
@@ -87,6 +173,7 @@ export default function GuidedCaptureWizard({
             <input
               type="checkbox"
               checked={flightCheck.composition}
+              disabled={!current}
               onChange={() => toggleCheck('composition')}
             />
             <div>
@@ -99,6 +186,7 @@ export default function GuidedCaptureWizard({
             <input
               type="checkbox"
               checked={flightCheck.focusLocked}
+              disabled={!current}
               onChange={() => toggleCheck('focusLocked')}
             />
             <div>
@@ -111,6 +199,7 @@ export default function GuidedCaptureWizard({
             <input
               type="checkbox"
               checked={flightCheck.boardPrinted}
+              disabled={!current}
               onChange={() => toggleCheck('boardPrinted')}
             />
             <div>
@@ -123,6 +212,7 @@ export default function GuidedCaptureWizard({
             <input
               type="checkbox"
               checked={flightCheck.syncCuesPlanned}
+              disabled={!current}
               onChange={() => toggleCheck('syncCuesPlanned')}
             />
             <div>
@@ -169,7 +259,7 @@ export default function GuidedCaptureWizard({
           <div className="uw-actions">
             {onOpenNative && (
               <>
-                <button type="button" className="uw-btn" onClick={() => onOpenNative('capture')} disabled={!selectedSession}>
+                <button type="button" className="uw-btn" disabled>
                   Open Capture Station GUI
                 </button>
                 <button type="button" className="uw-btn" onClick={() => onOpenNative('board')} disabled={!selectedSession}>
@@ -225,8 +315,7 @@ export default function GuidedCaptureWizard({
                       <button
                         type="button"
                         className="uw-btn primary"
-                        disabled={!!busy || role.file_present || cameraState?.state === 'recording'}
-                        onClick={() => onStartCapture(role.role, role.record_seconds || 15)}
+                        disabled
                       >
                         Record {role.record_seconds || 15}s Webcam
                       </button>
@@ -321,8 +410,10 @@ export default function GuidedCaptureWizard({
                   ))}
                 </ul>
               </div>
-            ) : (
+            ) : readyToRegister ? (
               <p className="uw-help uw-text-present">All 6 role files probed and valid. Ready to register.</p>
+            ) : (
+              <p role="status" className="uw-help">{detail ? 'Registration pending: six verified source files and all registration requirements are needed.' : 'Session verification unavailable. Select a session and wait for its details to load.'}</p>
             )}
 
             <button

@@ -4,12 +4,12 @@ import hashlib
 import importlib.util
 import json
 import math
-from pathlib import Path
 import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
@@ -52,30 +52,23 @@ class ExportTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         return path
 
-    def manifest(self, with_mot=False):
+    def manifest(self, with_mot=False, *, session_id="factory_session"):
         roles = ("cam01_intrinsics", "cam02_intrinsics", "cam01_board",
                  "cam02_board", "cam01_trial", "cam02_trial")
         captures = {}
         for role in roles:
             path = self.write("factory_" + role + ".mp4", role)
             captures[role] = {"path": path.name, "sha256": digest(path)}
-        config = self.write("Config.toml", "[project]\n")
-        session = {"schema": "kinelab.session.v1", "session_id": "factory_session",
+        self.write("Config.toml", "[project]\n")
+        session = {"schema": "kinelab.session.v1", "session_id": session_id,
                    "kind": "real", "subject_count": 1, "camera_ids": ["cam01", "cam02"],
                    "created_at": "2026-10-26T12:00:00+00:00", "captures": captures}
         self.write("session.json", json.dumps(session))
-        calibration = self.write("factory_calibration.toml", "# synthetic calibration binding")
-        def stage(name, paths):
-            return {"name": name, "status": "passed",
-                    "artifacts": [{"path": p.name, "sha256": digest(p)} for p in paths]}
-        run = {"schema": "kinelab.run.v1", "session_id": "factory_session",
-               "config_sha256": digest(config),
-               "inputs": {r: v["sha256"] for r, v in captures.items()},
-               "coordinateSystem": "opensim_y_up",
-               "stages": [stage("calibration", [calibration]), stage("filtering", [self.trc])]}
-        if with_mot:
-            run["stages"].append(stage("kinematics", [self.mot]))
-        return self.write("run.json", json.dumps(run))
+        from native_evidence_fixture import complete_native_fixture
+        manifest, trc, mot = complete_native_fixture(self.root, self.trc.read_text(), self.mot.read_text(),
+            through="kinematics" if with_mot else "filtering")
+        self.trc, self.mot = trc, mot if with_mot else self.mot
+        return manifest
 
     def test_legacy_and_millimeters_preserve_actual_times(self):
         self.trc.write_text(trc_text((2, 2.000000001, 2.4), "mm"))
@@ -85,6 +78,27 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(data["frames"][0]["xyz"][0], [0.001, 0.002, 0.003])
         self.assertEqual(data["frames"][1]["t"], 2.000000001)
         self.assertEqual(data["bones"], [[0, 1]])
+
+    def test_omitted_native_prerequisites_cannot_produce_verified_export(self):
+        manifest = self.manifest()
+        run = json.loads(manifest.read_text())
+        run["stages"] = [s for s in run["stages"] if s["name"] in ("calibration", "filtering")]
+        manifest.write_text(json.dumps(run))
+        with self.assertRaisesRegex(ValueError, "ARTIFACT_MISMATCH"):
+            exporter.motion(self.trc, run_manifest=manifest)
+
+    def test_served_export_must_match_bound_source_values(self):
+        manifest = self.manifest()
+        path = self.root / "exports/fixture.motion.json"
+        path.parent.mkdir()
+        data = exporter.motion(self.trc, run_manifest=manifest)
+        path.write_text(json.dumps(data))
+        self.assertTrue(callable(getattr(exporter, "load_verified_motion", None)), "verified motion reader required")
+        self.assertEqual(exporter.load_verified_motion(self.root, path), data)
+        data["frames"][0]["xyz"][0][0] += 1
+        path.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "EVIDENCE_INVALID"):
+            exporter.load_verified_motion(self.root, path)
 
     def test_trc_rejects_malformed_series_and_headers(self):
         good = trc_text()
@@ -135,7 +149,7 @@ class ExportTests(unittest.TestCase):
 
     def test_native_opensim_software_unit_round_trip(self):
         import opensim
-        root = Path(r"C:\Users\soren\Documents\Projects\KineLab-PT-DualCam\.venv\Lib\site-packages\Pose2Sim\OpenSim_Setup")
+        root = PROJECT / ".venv/Lib/site-packages/Pose2Sim/OpenSim_Setup"
         fixture = json.loads((PROJECT / "tests/factory_opensim_units.json").read_text())
         for filename in ("Model_Pose2Sim_simple.osim", "Model_Pose2Sim_muscles_flex.osim"):
             model = opensim.Model(str(root / filename))
@@ -208,13 +222,7 @@ class ExportTests(unittest.TestCase):
             exporter.validate_motion(data)
 
     def test_v2_accepts_the_shared_safe_session_name_contract(self):
-        manifest = self.manifest()
-        run = json.loads(manifest.read_text())
-        session_path = self.root / "session.json"
-        session = json.loads(session_path.read_text())
-        session["session_id"] = run["session_id"] = "factory.session-01"
-        session_path.write_text(json.dumps(session))
-        manifest.write_text(json.dumps(run))
+        manifest = self.manifest(session_id="factory.session-01")
         self.assertEqual(exporter.motion(self.trc, run_manifest=manifest)["sessionId"], "factory.session-01")
 
     def test_v2_rejects_stale_mismatched_unpassed_or_unbound_files(self):
@@ -245,14 +253,22 @@ class ExportTests(unittest.TestCase):
         out = self.root / "factory_out.json"
         result = subprocess.run([sys.executable, "-B", str(PROJECT / "export_motion.py"),
                                  "--project", str(self.root), "--run-manifest", str(manifest),
-                                 "--out", str(out)], capture_output=True, text=True)
+                                 "--out", str(out)], capture_output=True, text=True, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(out.exists())
+        # Keep every lookup inside this generated owned temporary root.
+        unindexed_project = self.root / "unindexed-session"
+        unindexed_project.mkdir()
         result = subprocess.run([sys.executable, "-B", str(PROJECT / "export_motion.py"),
+                                 "--project", str(unindexed_project), "--data-root", str(self.root),
                                  "--trc", str(self.trc), "--no-mot", "--run-manifest", str(manifest),
-                                 "--out", str(out)], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(out.read_text())["schema"], "kinelab.motion.v2")
+                                 "--out", str(out)], capture_output=True, text=True, check=False)
+        # Native-v2 publication needs an existing indexed local audit context.
+        # Genuine indexed subprocess success is covered by test_cli_motion_export_audit.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("EXPORT_INDEX_REQUIRED:", result.stderr)
+        self.assertFalse(out.exists())
+        self.assertFalse((self.root / ".kinelab_index.db").exists())
 
     def test_json_boundary_rejects_bad_shapes_and_nonfinite_values(self):
         good = exporter.motion(self.trc, self.mot)
@@ -278,7 +294,8 @@ class ExportTests(unittest.TestCase):
     def test_existing_demo_remains_readable(self):
         demo = exporter.load_json(PROJECT / "viewer/public/motion/demo.motion.json")
         self.assertEqual(len(exporter.validate_motion(demo)["frames"]), 97)
-        parsed = exporter.motion(PROJECT / "projects/demo-local/pose-3d/demo-local_1-97.trc")
+        self.trc.write_text(trc_text(tuple(2 + i / 30 for i in range(97))))
+        parsed = exporter.motion(self.trc)
         self.assertEqual(len(parsed["frames"]), 97)
 
 
@@ -305,7 +322,7 @@ class BlenderTests(unittest.TestCase):
             adapter.animation_timing(data)
 
     def test_real_blender_accepts_v2_and_rejects_bad_json_before_writing(self):
-        blender = Path(r"C:\Users\soren\Documents\Projects\KineLab-PT-DualCam\tools\blender-4.5.15-windows-x64\blender.exe")
+        blender = PROJECT / "tools/blender-4.5.15-windows-x64/blender.exe"
         if not blender.is_file():
             self.skipTest("Installed Blender executable unavailable; no v2 Blender export verified")
         manifest = ExportTests.manifest(self)
@@ -314,19 +331,19 @@ class BlenderTests(unittest.TestCase):
         blend, glb = self.root / "factory_v2.blend", self.root / "factory_v2.glb"
         command = [str(blender), "-b", "--python-exit-code", "1", "--python",
                    str(PROJECT / "blender_import.py"), "--", str(inp), str(blend), str(glb)]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(blend.is_file() and glb.is_file())
         inp = self.write("factory_bad.json", json.dumps({**data, "bones": [[0, 20]]}))
         bad_blend, bad_glb = self.root / "factory_bad.blend", self.root / "factory_bad.glb"
         command[-3:] = [str(inp), str(bad_blend), str(bad_glb)]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("MOTION_INVALID", result.stdout + result.stderr)
         self.assertFalse(bad_blend.exists() or bad_glb.exists())
 
     def test_real_blender_exports_timestamps_and_refuses_existing_destinations(self):
-        blender = Path(r"C:\Users\soren\Documents\Projects\KineLab-PT-DualCam\tools\blender-4.5.15-windows-x64\blender.exe")
+        blender = PROJECT / "tools/blender-4.5.15-windows-x64/blender.exe"
         if not blender.is_file():
             self.skipTest("Installed Blender executable unavailable; no Blender export verified")
         self.trc.write_text(trc_text((2, 2.137, 2.4)))
@@ -338,22 +355,22 @@ class BlenderTests(unittest.TestCase):
         blend, glb = self.root / "factory_motion.blend", self.root / "factory_motion.glb"
         command = [str(blender), "-b", "--python-exit-code", "1", "--python",
                    str(PROJECT / "blender_import.py"), "--", str(inp), str(blend), str(glb)]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(blend.is_file())
         inspect = subprocess.run([str(blender), "-b", str(blend), "--python-exit-code", "1",
                                   "--python-expr",
-                                  "import bpy; s=bpy.context.scene; "
-                                  "assert (s.render.fps,s.render.fps_base)==(30000,1001.0); "
-                                  "assert list(s['kinelab_source_times_s'])==[2.0,2.137,2.4]; "
-                                  "assert tuple(bpy.data.objects['Joint | Hip'].location)==(1.0,-3.0,2.0); "
-                                  "keys=bpy.data.objects['Joint | Hip'].animation_data.action.fcurves[0].keyframe_points; "
-                                  "assert abs(keys[1].co.x-5.105894105894)<1e-5; "
-                                  "assert abs(keys[-1].co.x-12.988011988012)<1e-5; "
-                                  "s.frame_set(2); assert tuple(bpy.data.objects['Joint | RHip'].location)==(4.0,-6.0,5.0); "
-                                  "s.frame_set(6); assert tuple(bpy.data.objects['Joint | RHip'].scale)==(0.0,0.0,0.0); "
-                                  "print('FACTORY_BLEND_VERIFIED')"],
-                                 capture_output=True, text=True, timeout=120)
+                                  ("import bpy; s=bpy.context.scene; "
+                                   "assert (s.render.fps,s.render.fps_base)==(30000,1001.0); "
+                                   "assert list(s['kinelab_source_times_s'])==[2.0,2.137,2.4]; "
+                                   "assert tuple(bpy.data.objects['Joint | Hip'].location)==(1.0,-3.0,2.0); "
+                                   "keys=bpy.data.objects['Joint | Hip'].animation_data.action.fcurves[0].keyframe_points; "
+                                   "assert abs(keys[1].co.x-5.105894105894)<1e-5; "
+                                   "assert abs(keys[-1].co.x-12.988011988012)<1e-5; "
+                                   "s.frame_set(2); assert tuple(bpy.data.objects['Joint | RHip'].location)==(4.0,-6.0,5.0); "
+                                   "s.frame_set(6); assert tuple(bpy.data.objects['Joint | RHip'].scale)==(0.0,0.0,0.0); "
+                                   "print('FACTORY_BLEND_VERIFIED')")],
+                                 capture_output=True, text=True, timeout=120, check=False)
         self.assertEqual(inspect.returncode, 0, inspect.stdout + inspect.stderr)
         self.assertIn("FACTORY_BLEND_VERIFIED", inspect.stdout)
         raw = glb.read_bytes()
@@ -380,7 +397,7 @@ class BlenderTests(unittest.TestCase):
                         self.assertAlmostEqual(got[0], want, places=5)
                     self.assertEqual(values(sampler["output"], 3), [(1, 2, 3), (2, 2, 3), (3, 2, 3)])
         before = (digest(blend), digest(glb))
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("OUTPUT_EXISTS", result.stdout + result.stderr)
         self.assertEqual((digest(blend), digest(glb)), before)

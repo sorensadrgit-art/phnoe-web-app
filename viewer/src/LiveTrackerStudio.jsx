@@ -3,14 +3,26 @@ import LiveHUDOverlay from './LiveHUDOverlay.jsx';
 import LiveDigitalTwin from './LiveDigitalTwin.jsx';
 import LiveSetSummaryModal from './LiveSetSummaryModal.jsx';
 import { computePoseKinematics } from './liveKinematics.js';
+import { generateSimulatedPose } from './syntheticPose.js';
+import SyntheticRecordingPanel from './SyntheticRecordingPanel.jsx';
+import { createPoseClient } from './poseClient.js';
 import { createExerciseTracker, DEFAULT_PRESETS, EXERCISE_TYPES, PHASES } from './exerciseStateMachine.js';
+import { computeExerciseMetric } from './liveDisplayHelper.js';
+import { AVATAR_COLLAPSED_NOTICE } from './avatarLifecycle.js';
+
+export function appendPreviewFrame(frames, frame) {
+  frames.push(frame);
+  if (frames.length > 600) { frames.shift(); return 1; }
+  return 0;
+}
 
 // Synthesized Web Audio Biofeedback Chimes
-function playChime(type = 'success') {
+function playChime(type = 'success', contexts) {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
     const ctx = new AudioContext();
+    contexts?.add(ctx);
 
     if (type === 'success') {
       // Pleasant two-tone ascending chime
@@ -34,6 +46,7 @@ function playChime(type = 'success') {
       gain.connect(ctx.destination);
 
       osc1.start();
+      osc2.onended=()=>{contexts?.delete(ctx);void ctx.close().catch(()=>{});};
       osc2.start();
       osc1.stop(ctx.currentTime + 0.35);
       osc2.stop(ctx.currentTime + 0.35);
@@ -47,6 +60,7 @@ function playChime(type = 'success') {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
       osc.connect(gain);
       gain.connect(ctx.destination);
+      osc.onended=()=>{contexts?.delete(ctx);void ctx.close().catch(()=>{});};
       osc.start();
       osc.stop(ctx.currentTime + 0.25);
     }
@@ -105,17 +119,33 @@ export default function LiveTrackerStudio({
   onSessionCreated,
   apiPrefix = '/api/v1',
   demoMode = false,
+  onRecordingBusy,
+  initialAvatarVisible = true,
 }) {
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState('');
   const [mirrored, setMirrored] = useState(true);
+  const [avatarVisible, setAvatarVisible] = useState(initialAvatarVisible);
+  const [documentHidden, setDocumentHidden] = useState(
+    typeof document !== 'undefined' ? document.hidden : false
+  );
   const [layout, setLayout] = useState('split'); // 'full', 'split', 'pip'
   const [exerciseType, setExerciseType] = useState(EXERCISE_TYPES.SQUAT);
   const [targetROM, setTargetROM] = useState(80);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [isTracking, setIsTracking] = useState(true);
   const [isSimulated, setIsSimulated] = useState(demoMode);
+  const [cameraStarted,setCameraStarted] = useState(false);
+  const [activeSide,setActiveSide] = useState('left');
+  const [poseStatus,setPoseStatus] = useState({status:'UNAVAILABLE',reason:'CAMERA_NOT_STARTED'});
   const [cameraError, setCameraError] = useState(null);
+  const [recordingBusy,setRecordingBusy]=useState(false);
+  const [activityStopped,setActivityStopped]=useState(false);
+  const [stopCleanupError,setStopCleanupError]=useState(false);
+  const stopSignal=useRef(false), stopRecordingRef=useRef(null), poseClientRef=useRef(null), audioContextsRef=useRef(new Set());
+  const avatarRenderingVisible = avatarVisible && !recordingBusy;
+  const observationRef=useRef(null);
+  const recordingChanged=useCallback(value=>{setRecordingBusy(value);onRecordingBusy?.(value);},[onRecordingBusy]);
 
   // Completed set summary modal
   const [showSummary, setShowSummary] = useState(false);
@@ -129,6 +159,14 @@ export default function LiveTrackerStudio({
   const [trackerState, setTrackerState] = useState(null);
   const [viewportSize, setViewportSize] = useState({ width: 640, height: 480 });
 
+  // Document visibility change listener
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisibility = () => setDocumentHidden(document.hidden);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   const videoRef = useRef(null);
   const cameraViewportRef = useRef(null);
   const streamRef = useRef(null);
@@ -137,20 +175,42 @@ export default function LiveTrackerStudio({
   const simulationStepRef = useRef(0);
   const lastRepCountRef = useRef(0);
   const recordedFramesRef = useRef([]);
+  const omittedPreviewFramesRef = useRef(0);
   const lastFrameSampleTimeRef = useRef(0);
   const setStartTimeRef = useRef(Date.now());
   const opticalMotionCanvasRef = useRef(null);
   const prevFramePixelsRef = useRef(null);
   const liveDescentOffsetRef = useRef(0);
 
+  const stopActivity = useCallback(()=>{
+    stopSignal.current=true; observationRef.current=null;
+    setActivityStopped(true); setIsTracking(false); setCameraStarted(false); setAudioEnabled(false);
+    setLiveLandmarks(null); setLiveKinematics(null); setTrackerState(trackerRef.current?.pause());
+    setPoseStatus({status:'UNAVAILABLE',reason:'ACTIVITY_STOPPED'});
+    try{stopRecordingRef.current?.();}catch{setStopCleanupError(true);}
+    try{poseClientRef.current?.close();}catch{setStopCleanupError(true);}
+    try{if(animFrameRef.current)cancelAnimationFrame(animFrameRef.current);}catch{setStopCleanupError(true);}
+    let tracksStopped=true;
+    try{for(const track of streamRef.current?.getTracks()||[]) { try{track.stop();}catch{tracksStopped=false;setStopCleanupError(true);} }}catch{tracksStopped=false;setStopCleanupError(true);}
+    if(tracksStopped)streamRef.current=null;
+    try{if(videoRef.current)videoRef.current.srcObject=null;}catch{setStopCleanupError(true);}
+    for(const context of audioContextsRef.current) { try{void context.close().then(()=>audioContextsRef.current.delete(context)).catch(()=>setStopCleanupError(true));}catch{setStopCleanupError(true);} }
+  },[]);
+  useEffect(()=>()=>{
+    for(const context of audioContextsRef.current) { try{void context.close().catch(()=>{});}catch{} }
+    audioContextsRef.current.clear();
+  },[]);
+
   // Initialize Exercise State Machine Tracker
   useEffect(() => {
     trackerRef.current = createExerciseTracker(exerciseType, {
       targetROM: Number(targetROM),
+      activeSide, projectionOnly:!isSimulated && !demoMode,
     });
     setTrackerState(trackerRef.current.getState());
     lastRepCountRef.current = 0;
-  }, [exerciseType, targetROM]);
+    recordedFramesRef.current=[];observationRef.current=null;setLiveLandmarks(null);setLiveKinematics(null);
+  }, [exerciseType, targetROM, activeSide, isSimulated, demoMode]);
 
   // Enumerate Camera Devices
   useEffect(() => {
@@ -176,7 +236,7 @@ export default function LiveTrackerStudio({
     let cancelled = false;
 
     async function startCamera() {
-      if (isSimulated || demoMode) return;
+      if (stopSignal.current || isSimulated || demoMode || !cameraStarted) return;
       setCameraError(null);
 
       // Stop existing tracks
@@ -186,7 +246,7 @@ export default function LiveTrackerStudio({
 
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error('Webcam API unavailable; falling back to simulated stream.');
+          throw new Error('Webcam API unavailable');
         }
 
         const constraints = {
@@ -197,7 +257,7 @@ export default function LiveTrackerStudio({
         };
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        if (cancelled) {
+        if (cancelled || stopSignal.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
@@ -211,8 +271,7 @@ export default function LiveTrackerStudio({
         if (!cancelled) {
           console.warn('Camera stream error:', err);
           setCameraError(err.message || 'Camera inaccessible');
-          // Automatically engage realistic simulated pose stream for testing
-          setIsSimulated(true);
+          // Keep camera-preview mode without inferred metrics; never silently substitute synthetic data.
         }
       }
     }
@@ -223,9 +282,52 @@ export default function LiveTrackerStudio({
       cancelled = true;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current=null;
       }
     };
-  }, [selectedCamera, isSimulated, demoMode]);
+  }, [selectedCamera, isSimulated, demoMode, cameraStarted]);
+
+  useEffect(()=>{
+    if(stopSignal.current||isSimulated||demoMode)return;
+    let active=true,timer,expiry;
+    const client=createPoseClient({token,apiPrefix});poseClientRef.current=client;
+    const canvas=document.createElement('canvas');let lastTime=-1,lastResultAt=0,processed=0;
+    const unavailable=reason=>{setPoseStatus({status:'UNAVAILABLE',reason});setLiveLandmarks(null);setLiveKinematics(null);setTrackerState(trackerRef.current?.pause());};
+    unavailable(cameraStarted?(isTracking?'WAITING_FOR_FRAME':'PAUSED'):'CAMERA_NOT_STARTED');
+    async function sample(){
+      const video=videoRef.current;
+      if(!active||stopSignal.current)return;
+      if(!cameraStarted||!isTracking||document.hidden){timer=setTimeout(sample,150);return;}
+      if(video?.readyState>=2&&video.videoWidth&&video.currentTime!==lastTime){
+        lastTime=video.currentTime;
+        const capturedAtMs=Date.now();
+        const scale=Math.min(1,640/video.videoWidth,640/video.videoHeight);
+        canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);
+        const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0,canvas.width,canvas.height);
+        let jpegBase64='';
+        for(const quality of [.75,.5,.3]){jpegBase64=canvas.toDataURL('image/jpeg',quality).split(',')[1];if(jpegBase64.length<=60000)break;}
+        try {
+          const result=await client.infer({jpegBase64,width:canvas.width,height:canvas.height,capturedAtMs});
+          if(!active||stopSignal.current)return;
+          if(document.hidden)unavailable('HIDDEN');
+          else if(!result||result.status!=='AVAILABLE')unavailable(result?.reason||'STALE_FRAME');
+          else {
+            const kine=computePoseKinematics(result.landmarks,{width:result.width,height:result.height,minConfidence:result.min_confidence});
+            lastResultAt=capturedAtMs;processed++;
+            setLiveLandmarks(result.landmarks);setLiveKinematics(kine);
+            setTrackerState(trackerRef.current?.update(kine,capturedAtMs));
+            const quality=video.getVideoPlaybackQuality?.();
+            setPoseStatus({...result,processed,dropped:quality?.droppedVideoFrames??null});
+          }
+        }catch{if(active&&!stopSignal.current)unavailable('INFERENCE_FAILED');}
+      }
+      timer=setTimeout(sample,30);
+    }
+    const hidden=()=>{if(document.hidden)unavailable('HIDDEN');};document.addEventListener('visibilitychange',hidden);
+    expiry=setInterval(()=>{if(lastResultAt&&Date.now()-lastResultAt>1500){lastResultAt=0;unavailable('STALE_FRAME');}},200);
+    sample();
+    return()=>{active=false;clearTimeout(timer);clearInterval(expiry);client.close();if(poseClientRef.current===client)poseClientRef.current=null;document.removeEventListener('visibilitychange',hidden);};
+  },[isSimulated,demoMode,cameraStarted,isTracking,selectedCamera,exerciseType,targetROM,activeSide,token,apiPrefix]);
 
   // Dynamic viewport measurement for responsive HUD overlay
   useEffect(() => {
@@ -244,93 +346,20 @@ export default function LiveTrackerStudio({
 
   // Main Tracking Loop (Realtime 30-60 FPS)
   useEffect(() => {
+    // Synthetic generation is confined to the explicitly selected test mode.
+    if (!isSimulated && !demoMode) {
+      observationRef.current=null;
+      return;
+    }
     let active = true;
 
-    function generateSimulatedPose(step, type = exerciseType) {
-      const cycle = (step % 120) / 120.0; // 4 second full rep cycle at 30fps
-      const marks = new Array(33).fill(null);
-
-      let leftFlexDeg = 10;
-      let rightFlexDeg = 10;
-      let trunkLeanDeg = 0;
-      let squatDepthPct = 0;
-
-      if (type === EXERCISE_TYPES.BALANCE) {
-        // Stance leg (Right): straight, left leg lifted & bent
-        leftFlexDeg = 55 + Math.sin(cycle * 4 * Math.PI) * 4;
-        rightFlexDeg = 8 + Math.cos(cycle * 2 * Math.PI) * 2;
-        trunkLeanDeg = 6 + Math.sin(cycle * 2 * Math.PI) * 4; // Subtle natural postural sway
-      } else if (type === EXERCISE_TYPES.LUNGE) {
-        // Lead leg (Left) steps forward and bends deep; trail leg follows
-        squatDepthPct = (1.0 - Math.cos(cycle * 2 * Math.PI)) / 2.0;
-        leftFlexDeg = 15 + squatDepthPct * 75; // 15 to 90 deg
-        rightFlexDeg = 10 + squatDepthPct * 45; // trail knee
-        trunkLeanDeg = squatDepthPct * 12;
-      } else if (type === EXERCISE_TYPES.KNEE_EXTENSION) {
-        // Active leg (Left) extends from bent (85 deg) to straight (10 deg)
-        const extendPct = (1.0 - Math.cos(cycle * 2 * Math.PI)) / 2.0;
-        leftFlexDeg = 85 - extendPct * 75;
-        rightFlexDeg = 80;
-        trunkLeanDeg = 5;
-      } else {
-        // Squat: bilateral symmetrical knee flexion
-        squatDepthPct = (1.0 - Math.cos(cycle * 2 * Math.PI)) / 2.0;
-        leftFlexDeg = 10 + squatDepthPct * 75; // 10 to 85 deg
-        rightFlexDeg = 10 + squatDepthPct * 75;
-        trunkLeanDeg = squatDepthPct * 18;
-      }
-
-      // Depth ratios
-      const lDepthRatio = Math.max(0, (leftFlexDeg - 10) / 80);
-      const rDepthRatio = Math.max(0, (rightFlexDeg - 10) / 80);
-      const avgDepthRatio = (lDepthRatio + rDepthRatio) / 2;
-
-      const hipY = 0.50 + avgDepthRatio * 0.18;
-      const shoulderY = 0.25 + avgDepthRatio * 0.18;
-      const trunkSwayX = (trunkLeanDeg / 45) * 0.04;
-      const trunkLeanZ = -(trunkLeanDeg / 45) * 0.15; // 3D sagittal depth
-
-      // Hips, Shoulders
-      marks[11] = { x: 0.44 + trunkSwayX, y: shoulderY, z: -0.05 + trunkLeanZ, visibility: 0.99 }; // LShoulder
-      marks[12] = { x: 0.56 + trunkSwayX, y: shoulderY, z: -0.05 + trunkLeanZ, visibility: 0.99 }; // RShoulder
-      marks[23] = { x: 0.45, y: hipY, z: 0, visibility: 0.99 }; // LHip
-      marks[24] = { x: 0.55, y: hipY, z: 0, visibility: 0.99 }; // RHip
-
-      // Knees
-      const lKneeY = 0.68 + (type === EXERCISE_TYPES.BALANCE ? -0.08 : lDepthRatio * 0.08);
-      const rKneeY = 0.68 + rDepthRatio * 0.08;
-      marks[25] = { x: 0.43, y: lKneeY, z: 0.08, visibility: 0.99 }; // LKnee
-      marks[26] = { x: 0.57, y: rKneeY, z: 0.08, visibility: 0.99 }; // RKnee
-
-      // Ankles
-      const lAnkleY = type === EXERCISE_TYPES.BALANCE ? 0.78 : 0.88;
-      marks[27] = { x: 0.44, y: lAnkleY, z: 0.05, visibility: 0.99 }; // LAnkle
-      marks[28] = { x: 0.56, y: 0.88, z: 0.05, visibility: 0.99 }; // RAnkle
-
-      // Feet
-      marks[29] = { x: 0.44, y: lAnkleY + 0.02, z: 0.05, visibility: 0.95 };
-      marks[30] = { x: 0.56, y: 0.90, z: 0.05, visibility: 0.95 };
-      marks[31] = { x: 0.43, y: lAnkleY + 0.04, z: 0.18, visibility: 0.95 };
-      marks[32] = { x: 0.57, y: 0.92, z: 0.18, visibility: 0.95 };
-
-      // Head
-      marks[0] = { x: 0.50 + trunkSwayX, y: shoulderY - 0.12, z: -0.08 + trunkLeanZ, visibility: 0.99 };
-
-      // Arms
-      marks[13] = { x: 0.40, y: shoulderY + 0.15, z: 0.05, visibility: 0.95 };
-      marks[14] = { x: 0.60, y: shoulderY + 0.15, z: 0.05, visibility: 0.95 };
-      marks[15] = { x: 0.46, y: shoulderY + 0.20, z: 0.15, visibility: 0.95 };
-      marks[16] = { x: 0.54, y: shoulderY + 0.20, z: 0.15, visibility: 0.95 };
-
-      return marks;
-    }
-
     function loop() {
-      if (!active) return;
+      if (!active || stopSignal.current) return;
 
-      if (isTracking && trackerRef.current) {
+      if (isTracking && !document.hidden && trackerRef.current) {
         simulationStepRef.current += 1;
         const landmarks = generateSimulatedPose(simulationStepRef.current, exerciseType);
+        observationRef.current={capturedAt:performance.now(),landmarks:landmarks.map(p=>p?[p.x,p.y,p.z,p.visibility]:null)};
 
         setLiveLandmarks(landmarks);
 
@@ -350,7 +379,8 @@ export default function LiveTrackerStudio({
             const t = setStartTimeRef.current ? (nowMs - setStartTimeRef.current) / 1000 : 0;
             const osimXYZ = extractOsimMarkers(landmarks, mirrored);
             if (osimXYZ) {
-              recordedFramesRef.current.push({ t: Math.round(t * 1000) / 1000, xyz: osimXYZ });
+              omittedPreviewFramesRef.current += appendPreviewFrame(recordedFramesRef.current,
+                { t: Math.round(t * 1000) / 1000, xyz: osimXYZ });
             }
           }
         }
@@ -358,7 +388,7 @@ export default function LiveTrackerStudio({
         // Sound chime on rep completion
         if (audioEnabled && nextState.repCount > lastRepCountRef.current) {
           lastRepCountRef.current = nextState.repCount;
-          playChime('success');
+          playChime('success', audioContextsRef.current);
         }
       }
 
@@ -375,71 +405,36 @@ export default function LiveTrackerStudio({
 
   const handleFinishSet = useCallback(() => {
     if (!trackerRef.current) return;
-    const summary = trackerRef.current.finishSet();
+    const summary = {...trackerRef.current.finishSet()};
     summary.frames = [...recordedFramesRef.current];
+    summary.frames_omitted = omittedPreviewFramesRef.current;
+    summary.coordinate_basis = 'Illustrative avatar coordinates; no measured physical scale';
+    summary.source_type = 'SYNTHETIC_TEST_ONLY';
+    summary.clinical_accuracy_verified = false;
     setSetSummary(summary);
     setShowSummary(true);
     setSaveResult(null);
+    setIsTracking(false);
   }, []);
 
   const handleStartNewSet = useCallback(() => {
+    if(stopSignal.current)return;
     if (trackerRef.current) {
       trackerRef.current.reset();
       setTrackerState(trackerRef.current.getState());
       lastRepCountRef.current = 0;
       recordedFramesRef.current = [];
+      omittedPreviewFramesRef.current = 0;
       lastFrameSampleTimeRef.current = 0;
       setStartTimeRef.current = Date.now();
     }
     setShowSummary(false);
     setSaveResult(null);
+    setIsTracking(true);
   }, []);
 
-  const handleSaveToSessions = useCallback(async (patientId) => {
-    if (!setSummary) return;
-    setIsSaving(true);
-    setSaveResult(null);
-
-    const payload = {
-      exercise_type: exerciseType,
-      patient_id: patientId || 'PT-PATIENT-01',
-      summary_metrics: setSummary,
-      reps: setSummary.reps || [],
-      frames: setSummary.frames || [],
-    };
-
-    try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (token) headers.Authorization = `Bearer ${token}`;
-
-      const res = await fetch(`${apiPrefix}/sessions/live-set`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to save live session');
-      }
-
-      setSaveResult({
-        ok: true,
-        message: `Successfully saved ${data.session_id}!`,
-      });
-
-      if (onSessionCreated) {
-        onSessionCreated(data.session_id);
-      }
-    } catch (err) {
-      setSaveResult({
-        ok: false,
-        message: err.message || 'Error communicating with local KineLab backend',
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  }, [setSummary, exerciseType, token, apiPrefix, onSessionCreated]);
+  // Live persistence is intentionally unavailable until real acquisition
+  // provenance and incremental durable recording pass acceptance.
 
   const handleExportJSON = useCallback(() => {
     if (!setSummary) return;
@@ -447,18 +442,20 @@ export default function LiveTrackerStudio({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `kinelab-live-${exerciseType}-${Date.now()}.json`;
+    a.download = `kinelab-SYNTHETIC-TEST-${exerciseType}-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }, [setSummary, exerciseType]);
 
-  const currentDepth = Math.max(
-    liveKinematics?.leftKneeFlexion ?? 0,
-    liveKinematics?.rightKneeFlexion ?? 0
+  const currentDepth = computeExerciseMetric(
+    liveKinematics,
+    exerciseType,
+    activeSide,
+    trackerState
   );
 
   return (
-    <div className="uw-live-studio">
+    <div className="uw-live-studio" data-activity-stopped={activityStopped}>
       {/* Top Studio Control Bar */}
       <div className="uw-live-controls-bar">
         <div className="uw-live-control-group">
@@ -466,7 +463,8 @@ export default function LiveTrackerStudio({
             <span>EXERCISE</span>
             <select
               value={exerciseType}
-              onChange={(e) => setExerciseType(e.target.value)}
+              disabled={recordingBusy}
+              onChange={(e) => {setExerciseType(e.target.value);setTargetROM(DEFAULT_PRESETS[e.target.value].targetROM);}}
               className="uw-live-select"
             >
               <option value={EXERCISE_TYPES.SQUAT}>Squats</option>
@@ -477,17 +475,18 @@ export default function LiveTrackerStudio({
           </label>
 
           <label className="uw-live-label">
-            <span>TARGET DEPTH</span>
+            <span>{exerciseType==='balance'?'TEST HOLD (SECONDS)':'TEST TARGET (DEGREES)'}</span>
             <select
               value={targetROM}
+              disabled={recordingBusy}
               onChange={(e) => setTargetROM(Number(e.target.value))}
               className="uw-live-select"
             >
-              <option value={60}>Gentle (60°)</option>
-              <option value={75}>Functional (75°)</option>
-              <option value={90}>Deep (90°+)</option>
+              {(exerciseType==='balance'?[10,20,30]:[60,75,80,90]).map(value=><option key={value} value={value}>{value}{exerciseType==='balance'?' s':'°'}</option>)}
             </select>
           </label>
+          {['lunges','knee-extension'].includes(exerciseType)&&<label className="uw-live-label"><span>ACTIVE SIDE</span>
+            <select aria-label="Active exercise side" value={activeSide} disabled={recordingBusy} onChange={e=>setActiveSide(e.target.value)}><option value="left">Left</option><option value="right">Right</option></select></label>}
         </div>
 
         <div className="uw-live-control-group">
@@ -512,9 +511,23 @@ export default function LiveTrackerStudio({
             type="button"
             className={`uw-live-btn-toggle ${mirrored ? 'is-active' : ''}`}
             onClick={() => setMirrored(!mirrored)}
+            disabled={recordingBusy}
             title="Mirror camera preview horizontally"
+            aria-pressed={mirrored ? 'true' : 'false'}
           >
             Mirror {mirrored ? 'ON' : 'OFF'}
+          </button>
+
+          <button
+            type="button"
+              className={`uw-live-btn-toggle ${avatarRenderingVisible ? 'is-active' : ''}`}
+              onClick={() => {if(!recordingBusy)setAvatarVisible(!avatarVisible);}}
+              disabled={recordingBusy}
+            title="Toggle 3D Digital Twin avatar rendering"
+            aria-label="Toggle 3D Digital Twin avatar"
+              aria-pressed={avatarRenderingVisible ? 'true' : 'false'}
+          >
+              3D Avatar: {recordingBusy && avatarVisible ? 'PAUSED' : avatarRenderingVisible ? 'ON' : 'OFF'}
           </button>
 
           <button
@@ -522,6 +535,7 @@ export default function LiveTrackerStudio({
             className={`uw-live-btn-toggle ${audioEnabled ? 'is-active' : ''}`}
             onClick={() => setAudioEnabled(!audioEnabled)}
             title="Audio rep chime"
+            aria-pressed={audioEnabled ? 'true' : 'false'}
           >
             Chimes {audioEnabled ? 'ON' : 'OFF'}
           </button>
@@ -532,15 +546,19 @@ export default function LiveTrackerStudio({
             <button
               type="button"
               className={`uw-live-btn-toggle ${isSimulated ? 'is-active' : ''}`}
-              onClick={() => setIsSimulated(!isSimulated)}
-              title="Toggle between physical webcam and synthetic biomechanical test stream"
+              onClick={() => {setIsSimulated(!isSimulated);setCameraStarted(false);setCameraError(null);setIsTracking(true);}}
+              disabled={recordingBusy}
+              title="Switch local camera inference and synthetic test animation"
             >
-              Feed: {isSimulated ? 'Synthetic Test' : 'Live Camera'}
+              Feed: {isSimulated ? 'SYNTHETIC TEST' : 'REAL CAMERA'}
             </button>
           )}
         </div>
 
         <div className="uw-live-control-group">
+          {!isSimulated&&!demoMode&&<button type="button" disabled={activityStopped} onClick={()=>{if(!stopSignal.current)setCameraStarted(!cameraStarted);}}>{cameraStarted?'Stop camera':'Start local camera'}</button>}
+          <button type="button" onClick={stopActivity}>Stop activity</button>
+          <button type="button" disabled={activityStopped||recordingBusy||showSummary} onClick={()=>{if(!stopSignal.current){trackerRef.current?.pause();setIsTracking(!isTracking);}}}>{isTracking?'Pause tracking':'Resume tracking'}</button>
           {/* Layout switcher */}
           <div className="uw-layout-segmented">
             <button
@@ -570,17 +588,36 @@ export default function LiveTrackerStudio({
             type="button"
             className="uw-btn-finish-set"
             onClick={handleFinishSet}
+            disabled={recordingBusy||(!isSimulated && !demoMode)}
+            title={!isSimulated && !demoMode ? "No measured set data is available" : "Finish synthetic test set"}
           >
-            Finish Set
+            Finish Synthetic Set
           </button>
         </div>
       </div>
 
+      {stopCleanupError&&<p role="alert">Stop cleanup could not be confirmed. Retain the recording draft and contact the runtime owner.</p>}
+      {activityStopped&&<p role="status">Activity stopped. Follow the owner-approved protocol; clinical next-step approval is PENDING. Recording saved/pending status is shown separately. Start a separate reviewed activity to resume.</p>}
       {cameraError && (
         <div className="uw-live-banner-alert">
-          <span>Camera stream notification: {cameraError}. (Using synthetic biomechanical test feed).</span>
+          <span>Camera stream notification: {cameraError}. No measurements available. Switch to Synthetic Test explicitly to view a demonstration.</span>
         </div>
       )}
+
+      <div role="status" className="uw-live-banner-alert">
+        {isSimulated || demoMode
+          ? 'SYNTHETIC TEST ONLY — simulated angles, reps and avatar; not measured movement. Measured-session saving is disabled.'
+          : 'REAL CAMERA — local image-plane inference; physical accuracy UNVERIFIED. Measured-session saving is disabled. 3D depth UNAVAILABLE; muscle activity NOT MEASURED.'}
+      </div>
+      {!isSimulated&&!demoMode&&<div className="uw-pose-status" role="status">
+        <strong>{poseStatus.status}</strong> {poseStatus.reason||'2D image-plane estimates'}
+        {poseStatus.status==='AVAILABLE'&&<span> · Visible landmarks {poseStatus.visible_landmarks}/17 · Confidence filter ≥0.6 (not an accuracy probability) · Inference {poseStatus.inference_ms} ms · Frames processed {poseStatus.processed} · Playback dropped frames {poseStatus.dropped??'UNAVAILABLE'}</span>}
+        <div>Left knee {liveKinematics?.leftKneeFlexion??'UNAVAILABLE'} · Right knee {liveKinematics?.rightKneeFlexion??'UNAVAILABLE'} · Trunk projection {liveKinematics?.trunkLean??'UNAVAILABLE'} (degrees)</div>
+      </div>}
+
+      {isSimulated&&!demoMode&&<SyntheticRecordingPanel token={token} apiPrefix={apiPrefix}
+        observationRef={observationRef} exerciseType={exerciseType} targetROM={targetROM}
+        mirrored={mirrored} onBusy={recordingChanged} stopSignal={stopSignal} stopRecordingRef={stopRecordingRef}/>}
 
       {/* Main Viewport Container */}
       <div className={`uw-live-viewport-container layout-${layout}`}>
@@ -599,30 +636,68 @@ export default function LiveTrackerStudio({
             <div className="uw-synthetic-feed-backdrop">
               <div className="uw-grid-pattern" />
               <div className="uw-synthetic-badge">
-                SYNTHETIC {exerciseType.toUpperCase()} FEED ACTIVE (30 FPS)
+                SYNTHETIC {exerciseType.toUpperCase()} ANIMATION
               </div>
             </div>
           )}
 
-          <LiveHUDOverlay
-            landmarks={liveLandmarks}
-            kinematics={liveKinematics}
-            trackerState={trackerState}
-            mirrored={mirrored}
-            width={viewportSize.width}
-            height={viewportSize.height}
-          />
+          {(isSimulated || demoMode || poseStatus.status==='AVAILABLE') && (
+            <LiveHUDOverlay
+              landmarks={liveLandmarks}
+              kinematics={liveKinematics}
+              trackerState={trackerState}
+              activeSide={activeSide}
+              exerciseType={exerciseType}
+              mirrored={mirrored}
+              width={viewportSize.width}
+              height={viewportSize.height}
+              sourceSize={!isSimulated&&poseStatus.status==='AVAILABLE'?{width:poseStatus.width,height:poseStatus.height}:null}
+            />
+          )}
         </div>
 
         {/* 3D Digital Twin (Split or PiP) */}
         {(layout === 'split' || layout === 'pip') && (
           <div className={`uw-twin-viewport ${layout === 'pip' ? 'is-pip' : ''}`}>
-            <LiveDigitalTwin
-              landmarks={liveLandmarks}
-              mirrored={mirrored}
-              targetROM={targetROM}
-              currentDepth={currentDepth}
-            />
+            {!avatarRenderingVisible ? (
+              <div
+                className="uw-twin-collapsed-placeholder"
+                role="status"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  minHeight: 200,
+                  padding: 16,
+                  textAlign: 'center',
+                  background: '#0a0f1d',
+                  borderRadius: 8,
+                  color: '#94a3b8',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.5,
+                  border: '1px dashed rgba(255, 255, 255, 0.15)',
+                }}
+              >
+                <div>
+                  {recordingBusy && avatarVisible && <div>3D avatar PAUSED — recording has priority.</div>}
+                  {AVATAR_COLLAPSED_NOTICE}
+                </div>
+              </div>
+            ) : (isSimulated || demoMode) ? (
+              <LiveDigitalTwin
+                landmarks={liveLandmarks}
+                kinematics={liveKinematics}
+                mirrored={mirrored}
+                targetROM={targetROM}
+                currentDepth={currentDepth}
+                exerciseType={exerciseType}
+                documentHidden={documentHidden}
+                avatarVisible={avatarRenderingVisible}
+              />
+            ) : (
+              <div role="status">3D motion UNAVAILABLE — camera inference provides 2D points without measured depth.</div>
+            )}
           </div>
         )}
       </div>
@@ -631,11 +706,12 @@ export default function LiveTrackerStudio({
       {showSummary && (
         <LiveSetSummaryModal
           summary={setSummary}
-          onSaveToSessions={demoMode ? undefined : handleSaveToSessions}
+          onSaveToSessions={undefined}
           demoMode={demoMode}
           onExportJSON={handleExportJSON}
           onClose={() => setShowSummary(false)}
           onStartNewSet={handleStartNewSet}
+          onStopActivity={stopActivity} activityStopped={activityStopped}
           isSaving={isSaving}
           saveResult={saveResult}
         />

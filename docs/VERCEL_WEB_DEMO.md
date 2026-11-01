@@ -1,3 +1,12 @@
+# Current candidate package notice
+
+Current candidate acceptance: NOT_GRANTED. Clean-machine validation: NOT_RUN. Physical validation: BLOCKED_ON_PHYSICAL_EVIDENCE. Clinical validation: UNVERIFIED.
+
+The web-demo description below is separate from candidate installation and runtime acceptance. Its original shortcut reference and existing localhost checks describe the preserved installation; they are not candidate verification steps. Preserve the original shortcut and installation. Use only the isolated KineLab PT Candidate entry point and fresh TEST_ONLY data for current candidate verification.
+
+Follow the generated README-OFFLINE-INSTALL.md and app/RUNBOOK.md in this package. A running original installation, hosted synthetic demonstration or package integrity check does not verify this candidate's native runtime, clean-machine operation or physical measurement.
+
+<!-- CURRENT-CANDIDATE-NOTICE:END -->
 # KineLab PT — Vercel web demonstration
 
 ## Deployment contract

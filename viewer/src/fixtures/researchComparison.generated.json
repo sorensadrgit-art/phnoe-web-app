@@ -1,0 +1,843 @@
+{
+  "evidence_kind": "GENERATED_CONTRACT_FIXTURE_ONLY",
+  "test_only": true,
+  "research_only": true,
+  "physical_accuracy_verified": false,
+  "clinical_validation": "UNVERIFIED",
+  "camera_probe": "MOCKED; all six MP4 names contain generated text bytes, never recordings",
+  "producer": "authenticated GET /api/v1/compare and GET /api/v1/sessions",
+  "session_rows_projection": "id,kind,evidence_status,metadata_context_sha256,research_source_revision",
+  "generator": "tests/test_research_comparison_fixture.py",
+  "session_rows": [
+    {
+      "id": "a",
+      "kind": "real",
+      "evidence_status": "not_assessed",
+      "metadata_context_sha256": "64d9ca2a5f156c5fbcb03d90419127a48edf878691c2d5507c2f8aa9086c8278",
+      "research_source_revision": {
+        "schema": "kinelab.comparison-source-observation.v1",
+        "status": "AVAILABLE",
+        "token": "b1e740218c181d332b33039797e2e44a5ed9e103e5e16f5ae867ca4de2dd9b04",
+        "reason": null,
+        "evidence_verified": false
+      }
+    },
+    {
+      "id": "b",
+      "kind": "real",
+      "evidence_status": "not_assessed",
+      "metadata_context_sha256": "a58a54bde82ef17059e888e7081dad9697478b535bfb264f3b22ab6d86115bf6",
+      "research_source_revision": {
+        "schema": "kinelab.comparison-source-observation.v1",
+        "status": "AVAILABLE",
+        "token": "9a6e42b9ed5bb3ee43318f024de3ea49ee7c6f6aa3f7dba2687e0bedd996e7d1",
+        "reason": null,
+        "evidence_verified": false
+      }
+    }
+  ],
+  "asymmetric_endpoint_probe": {
+    "session_2_angles_deg": [
+      0.35,
+      1.45,
+      0.9
+    ],
+    "expected_session_2": {
+      "min": 0.35,
+      "max": 1.45,
+      "excursion": 1.1
+    }
+  },
+  "comparison": {
+    "session_1": "a",
+    "session_2": "b",
+    "compatible": true,
+    "clinical_accuracy_verified": false,
+    "comparison_scope": "research_only",
+    "reason": "Matching confirmed metadata and verified native source bindings",
+    "research_measurements": {
+      "schema": "kinelab.research-comparison.v1",
+      "status": "AVAILABLE",
+      "reason": "Matching confirmed metadata and verified native source bindings",
+      "scope": "descriptive_angular_only",
+      "sessions": [
+        {
+          "session_id": "a",
+          "metadata": {
+            "confirmed": true,
+            "confirmed_at": "2026-10-29T10:00:00+00:00",
+            "laterality": "bilateral",
+            "operator_id": "op-22222222222222222222222222222222",
+            "protocol_id": "generated-protocol",
+            "protocol_version": "1",
+            "schema": "kinelab.session-metadata.v1",
+            "subject_id": "sub-11111111111111111111111111111111",
+            "task_id": "generated-squat"
+          },
+          "contract": {
+            "subject_id": "sub-11111111111111111111111111111111",
+            "task_id": "generated-squat",
+            "protocol_id": "generated-protocol",
+            "protocol_version": "1",
+            "laterality": "bilateral",
+            "model_sha256": "5ff389c66d51891ed1ad1cc89c00bd9537cad311f31c575c89a52f02f4c69d91",
+            "calibration_sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092",
+            "units": {
+              "knee_angle_r": "deg"
+            },
+            "coordinate_system": "opensim_y_up"
+          },
+          "source_revision": {
+            "session_sha256": "52318f3bc6aa8491691c4e97013822ee3ac9f6381de237ef9edc985878b7f58f",
+            "run_sha256": "03c3226b582e7281c257ef56e6beaccb46ed368c4fc6292f7a10c80d00be3743",
+            "motion_sha256": "cfb0e7386ca5602df580d9a67069a809e79558869e9daa67ef1bdc0a3cf334a1",
+            "model_sha256": "5ff389c66d51891ed1ad1cc89c00bd9537cad311f31c575c89a52f02f4c69d91",
+            "calibration_sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092",
+            "trc_sha256": "e28c85900298ce58477d82f03585bac50dd50945618825c5c5ba86da99ab6f90",
+            "mot_sha256": "046f4fa69dfebc337ea2245b6f7c2ca1d4d791ac7279e7a19ca0669efcdfc69e",
+            "capture_sha256": {
+              "cam01_intrinsics": "4d00f959845be33e5a9583bd5c162a3b5b0cbdbe995dbd63cfc219abdcdab707",
+              "cam02_intrinsics": "ebd93b1c36673e9e6b1e20773fc583811653e965dc058a4266fbddeb0c630255",
+              "cam01_board": "464d637cdf8a6f8afd9c2b6083dc89f13344250da4d683e6da5b37237f3692a9",
+              "cam02_board": "168f0a1d27b2f7a31e9c6de82a181cef0f713511410ad46166d71019c147832c",
+              "cam01_trial": "acf37c7584b5aeebc22373784ff0487cda0f38c4492948af8e3652d26d55578a",
+              "cam02_trial": "302f4781abba9a8501ef4bbcd40f13cc7ee89a11439e278b7983b891f2fce444"
+            }
+          },
+          "metadata_context_sha256": "64d9ca2a5f156c5fbcb03d90419127a48edf878691c2d5507c2f8aa9086c8278",
+          "timing": {
+            "schema": "kinelab.reconstruction-timing.v1",
+            "status": "AVAILABLE",
+            "session_id": "a",
+            "source_trc": {
+              "path": "pose-3d/fixture.trc",
+              "sha256": "8a682eecf0c9ff02fd8aeda9d3aad9e8c5e07142c817df5b18c2bf034b2c873f"
+            },
+            "calibration": {
+              "path": "calibration/fixture.toml",
+              "sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092"
+            },
+            "sample_counts": {
+              "observed": 5,
+              "valid": 4,
+              "rejected": 1,
+              "missing_interior": 1
+            },
+            "segments": [
+              {
+                "classification": "valid",
+                "first_frame": 1,
+                "last_frame": 2,
+                "first_time_s": 0.033333333,
+                "last_time_s": 0.066666667,
+                "samples": 2
+              },
+              {
+                "classification": "rejected",
+                "first_frame": 3,
+                "last_frame": 3,
+                "first_time_s": 0.1,
+                "last_time_s": 0.1,
+                "samples": 1
+              },
+              {
+                "classification": "valid",
+                "first_frame": 5,
+                "last_frame": 6,
+                "first_time_s": 0.166666667,
+                "last_time_s": 0.2,
+                "samples": 2
+              }
+            ],
+            "gaps": [
+              {
+                "first_missing_frame": 4,
+                "last_missing_frame": 4,
+                "missing_samples": 1,
+                "left_time_s": 0.1,
+                "right_time_s": 0.166666667
+              }
+            ],
+            "intervals": [
+              {
+                "left_frame": 1,
+                "right_frame": 2,
+                "start_time_s": 0.033333333,
+                "end_time_s": 0.066666667,
+                "category": "valid_adjacent"
+              },
+              {
+                "left_frame": 2,
+                "right_frame": 3,
+                "start_time_s": 0.066666667,
+                "end_time_s": 0.1,
+                "category": "rejected_or_transition_adjacent"
+              },
+              {
+                "left_frame": 3,
+                "right_frame": 5,
+                "start_time_s": 0.1,
+                "end_time_s": 0.166666667,
+                "category": "unknown_gap"
+              },
+              {
+                "left_frame": 5,
+                "right_frame": 6,
+                "start_time_s": 0.166666667,
+                "end_time_s": 0.2,
+                "category": "valid_adjacent"
+              }
+            ],
+            "duration_s": {
+              "valid_adjacent": 0.06666666700000001,
+              "rejected_or_transition_adjacent": 0.03333333300000001,
+              "unknown_gap": 0.06666666699999999,
+              "observed_span": 0.16666666700000002
+            },
+            "duration_policy": "adjacent_observed_endpoints_v1; [start,end) partition; rejected includes transitions; no endpoint extrapolation",
+            "source_extent": "leading/trailing and decoded source video extent UNVERIFIED",
+            "physical_accuracy_verified": false,
+            "clinical_accuracy_verified": false,
+            "clinical_validation": "UNVERIFIED",
+            "bindings": {
+              "session_id": "a",
+              "session_sha256": "52318f3bc6aa8491691c4e97013822ee3ac9f6381de237ef9edc985878b7f58f",
+              "run_sha256": "03c3226b582e7281c257ef56e6beaccb46ed368c4fc6292f7a10c80d00be3743",
+              "source_trc": {
+                "path": "pose-3d/fixture.trc",
+                "sha256": "8a682eecf0c9ff02fd8aeda9d3aad9e8c5e07142c817df5b18c2bf034b2c873f"
+              },
+              "calibration": {
+                "path": "calibration/fixture.toml",
+                "sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092"
+              },
+              "frame_diagnostics": {
+                "path": "diagnostics/reconstruction-frames.bded6898ddb3ff15f4b8406c81e506bbc2f7e3b249681092c084796a4eb7e7f7.json",
+                "sha256": "bded6898ddb3ff15f4b8406c81e506bbc2f7e3b249681092c084796a4eb7e7f7"
+              },
+              "metadata_context_sha256": "64d9ca2a5f156c5fbcb03d90419127a48edf878691c2d5507c2f8aa9086c8278",
+              "comparison_source_observation": {
+                "token": "b1e740218c181d332b33039797e2e44a5ed9e103e5e16f5ae867ca4de2dd9b04",
+                "evidence_verified": false
+              }
+            }
+          }
+        },
+        {
+          "session_id": "b",
+          "metadata": {
+            "confirmed": true,
+            "confirmed_at": "2026-10-29T10:00:00+00:00",
+            "laterality": "bilateral",
+            "operator_id": "op-22222222222222222222222222222222",
+            "protocol_id": "generated-protocol",
+            "protocol_version": "1",
+            "schema": "kinelab.session-metadata.v1",
+            "subject_id": "sub-11111111111111111111111111111111",
+            "task_id": "generated-squat"
+          },
+          "contract": {
+            "subject_id": "sub-11111111111111111111111111111111",
+            "task_id": "generated-squat",
+            "protocol_id": "generated-protocol",
+            "protocol_version": "1",
+            "laterality": "bilateral",
+            "model_sha256": "5ff389c66d51891ed1ad1cc89c00bd9537cad311f31c575c89a52f02f4c69d91",
+            "calibration_sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092",
+            "units": {
+              "knee_angle_r": "deg"
+            },
+            "coordinate_system": "opensim_y_up"
+          },
+          "source_revision": {
+            "session_sha256": "94353f3a1c7cf90a915dc336ef183ac9811686957b17a0ef5984dbd3dcd87951",
+            "run_sha256": "4612546c9f89ef95bc0ad664ca3fa99f11e76b3dbac2ac58eb869688ac5f94c1",
+            "motion_sha256": "4a07abc1d10a9842312101069fea5996cc2e9414c9c062b108df838bb01e365b",
+            "model_sha256": "5ff389c66d51891ed1ad1cc89c00bd9537cad311f31c575c89a52f02f4c69d91",
+            "calibration_sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092",
+            "trc_sha256": "e28c85900298ce58477d82f03585bac50dd50945618825c5c5ba86da99ab6f90",
+            "mot_sha256": "046f4fa69dfebc337ea2245b6f7c2ca1d4d791ac7279e7a19ca0669efcdfc69e",
+            "capture_sha256": {
+              "cam01_intrinsics": "4d00f959845be33e5a9583bd5c162a3b5b0cbdbe995dbd63cfc219abdcdab707",
+              "cam02_intrinsics": "ebd93b1c36673e9e6b1e20773fc583811653e965dc058a4266fbddeb0c630255",
+              "cam01_board": "464d637cdf8a6f8afd9c2b6083dc89f13344250da4d683e6da5b37237f3692a9",
+              "cam02_board": "168f0a1d27b2f7a31e9c6de82a181cef0f713511410ad46166d71019c147832c",
+              "cam01_trial": "acf37c7584b5aeebc22373784ff0487cda0f38c4492948af8e3652d26d55578a",
+              "cam02_trial": "302f4781abba9a8501ef4bbcd40f13cc7ee89a11439e278b7983b891f2fce444"
+            }
+          },
+          "metadata_context_sha256": "a58a54bde82ef17059e888e7081dad9697478b535bfb264f3b22ab6d86115bf6",
+          "timing": {
+            "schema": "kinelab.reconstruction-timing.v1",
+            "status": "AVAILABLE",
+            "session_id": "b",
+            "source_trc": {
+              "path": "pose-3d/fixture.trc",
+              "sha256": "8a682eecf0c9ff02fd8aeda9d3aad9e8c5e07142c817df5b18c2bf034b2c873f"
+            },
+            "calibration": {
+              "path": "calibration/fixture.toml",
+              "sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092"
+            },
+            "sample_counts": {
+              "observed": 5,
+              "valid": 4,
+              "rejected": 1,
+              "missing_interior": 1
+            },
+            "segments": [
+              {
+                "classification": "valid",
+                "first_frame": 1,
+                "last_frame": 2,
+                "first_time_s": 0.033333333,
+                "last_time_s": 0.066666667,
+                "samples": 2
+              },
+              {
+                "classification": "rejected",
+                "first_frame": 3,
+                "last_frame": 3,
+                "first_time_s": 0.1,
+                "last_time_s": 0.1,
+                "samples": 1
+              },
+              {
+                "classification": "valid",
+                "first_frame": 5,
+                "last_frame": 6,
+                "first_time_s": 0.166666667,
+                "last_time_s": 0.2,
+                "samples": 2
+              }
+            ],
+            "gaps": [
+              {
+                "first_missing_frame": 4,
+                "last_missing_frame": 4,
+                "missing_samples": 1,
+                "left_time_s": 0.1,
+                "right_time_s": 0.166666667
+              }
+            ],
+            "intervals": [
+              {
+                "left_frame": 1,
+                "right_frame": 2,
+                "start_time_s": 0.033333333,
+                "end_time_s": 0.066666667,
+                "category": "valid_adjacent"
+              },
+              {
+                "left_frame": 2,
+                "right_frame": 3,
+                "start_time_s": 0.066666667,
+                "end_time_s": 0.1,
+                "category": "rejected_or_transition_adjacent"
+              },
+              {
+                "left_frame": 3,
+                "right_frame": 5,
+                "start_time_s": 0.1,
+                "end_time_s": 0.166666667,
+                "category": "unknown_gap"
+              },
+              {
+                "left_frame": 5,
+                "right_frame": 6,
+                "start_time_s": 0.166666667,
+                "end_time_s": 0.2,
+                "category": "valid_adjacent"
+              }
+            ],
+            "duration_s": {
+              "valid_adjacent": 0.06666666700000001,
+              "rejected_or_transition_adjacent": 0.03333333300000001,
+              "unknown_gap": 0.06666666699999999,
+              "observed_span": 0.16666666700000002
+            },
+            "duration_policy": "adjacent_observed_endpoints_v1; [start,end) partition; rejected includes transitions; no endpoint extrapolation",
+            "source_extent": "leading/trailing and decoded source video extent UNVERIFIED",
+            "physical_accuracy_verified": false,
+            "clinical_accuracy_verified": false,
+            "clinical_validation": "UNVERIFIED",
+            "bindings": {
+              "session_id": "b",
+              "session_sha256": "94353f3a1c7cf90a915dc336ef183ac9811686957b17a0ef5984dbd3dcd87951",
+              "run_sha256": "4612546c9f89ef95bc0ad664ca3fa99f11e76b3dbac2ac58eb869688ac5f94c1",
+              "source_trc": {
+                "path": "pose-3d/fixture.trc",
+                "sha256": "8a682eecf0c9ff02fd8aeda9d3aad9e8c5e07142c817df5b18c2bf034b2c873f"
+              },
+              "calibration": {
+                "path": "calibration/fixture.toml",
+                "sha256": "bb868073ac3207606407743057a4db0a01564d2d566e89b0f68222f71090a092"
+              },
+              "frame_diagnostics": {
+                "path": "diagnostics/reconstruction-frames.f014030e44e122a8fd9e3403fe3a66ef04bc6ec7934b63347bb88a9e532a7757.json",
+                "sha256": "f014030e44e122a8fd9e3403fe3a66ef04bc6ec7934b63347bb88a9e532a7757"
+              },
+              "metadata_context_sha256": "a58a54bde82ef17059e888e7081dad9697478b535bfb264f3b22ab6d86115bf6",
+              "comparison_source_observation": {
+                "token": "9a6e42b9ed5bb3ee43318f024de3ea49ee7c6f6aa3f7dba2687e0bedd996e7d1",
+                "evidence_verified": false
+              }
+            }
+          }
+        }
+      ],
+      "coordinates": [
+        {
+          "name": "knee_angle_r",
+          "unit": "deg",
+          "session_1": {
+            "min": 0.2,
+            "max": 0.8,
+            "excursion": 0.6000000000000001
+          },
+          "session_2": {
+            "min": 0.2,
+            "max": 0.8,
+            "excursion": 0.6000000000000001
+          }
+        }
+      ],
+      "uncertainty": {
+        "status": "UNAVAILABLE",
+        "reason": "No approved uncertainty model bound to these sources"
+      },
+      "meaningful_change": {
+        "status": "UNAVAILABLE",
+        "reason": "No approved repeatability threshold"
+      }
+    },
+    "passport_1": {
+      "session_id": "a",
+      "kind": "real",
+      "badge": "REGISTERED",
+      "state": "KINEMATICS_PASSED",
+      "history": [
+        {
+          "state": "EMPTY",
+          "status": "passed",
+          "message": "Initialized"
+        },
+        {
+          "state": "DRAFT",
+          "status": "passed",
+          "message": "6/6 roles captured"
+        },
+        {
+          "state": "SIX_FILES_PROBED",
+          "status": "passed",
+          "message": "All 6 role clips probed"
+        },
+        {
+          "state": "REGISTERED_ORIGINALS",
+          "status": "passed",
+          "message": "Original video hashes registered"
+        },
+        {
+          "state": "CALIBRATION_PASSED",
+          "status": "passed",
+          "message": "Native camera calibration passed"
+        },
+        {
+          "state": "SYNC_PASSED",
+          "status": "passed",
+          "message": "Native synchronization verified"
+        },
+        {
+          "state": "3D_PASSED",
+          "status": "passed",
+          "message": "3D marker triangulation passed"
+        },
+        {
+          "state": "KINEMATICS_PASSED",
+          "status": "passed",
+          "message": "OpenSim IK joint angles produced"
+        }
+      ],
+      "is_test_only": false,
+      "can_register_real": false,
+      "ready_to_register": false,
+      "captured_count": 6,
+      "missing_roles": [],
+      "board_measurement": null,
+      "sources": {
+        "cam01_board": {
+          "session_id": "a",
+          "role": "cam01_board",
+          "filename": "cam01_board.mp4",
+          "sha256": "464d637cdf8a6f8afd9c2b6083dc89f13344250da4d683e6da5b37237f3692a9",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "464d637cdf8a6f8afd9c2b6083dc89f13344250da4d683e6da5b37237f3692a9",
+          "integrity_state": "unchanged"
+        },
+        "cam01_intrinsics": {
+          "session_id": "a",
+          "role": "cam01_intrinsics",
+          "filename": "cam01_intrinsics.mp4",
+          "sha256": "4d00f959845be33e5a9583bd5c162a3b5b0cbdbe995dbd63cfc219abdcdab707",
+          "bytes": 36,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "4d00f959845be33e5a9583bd5c162a3b5b0cbdbe995dbd63cfc219abdcdab707",
+          "integrity_state": "unchanged"
+        },
+        "cam01_trial": {
+          "session_id": "a",
+          "role": "cam01_trial",
+          "filename": "cam01_trial.mp4",
+          "sha256": "acf37c7584b5aeebc22373784ff0487cda0f38c4492948af8e3652d26d55578a",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "acf37c7584b5aeebc22373784ff0487cda0f38c4492948af8e3652d26d55578a",
+          "integrity_state": "unchanged"
+        },
+        "cam02_board": {
+          "session_id": "a",
+          "role": "cam02_board",
+          "filename": "cam02_board.mp4",
+          "sha256": "168f0a1d27b2f7a31e9c6de82a181cef0f713511410ad46166d71019c147832c",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "168f0a1d27b2f7a31e9c6de82a181cef0f713511410ad46166d71019c147832c",
+          "integrity_state": "unchanged"
+        },
+        "cam02_intrinsics": {
+          "session_id": "a",
+          "role": "cam02_intrinsics",
+          "filename": "cam02_intrinsics.mp4",
+          "sha256": "ebd93b1c36673e9e6b1e20773fc583811653e965dc058a4266fbddeb0c630255",
+          "bytes": 36,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "ebd93b1c36673e9e6b1e20773fc583811653e965dc058a4266fbddeb0c630255",
+          "integrity_state": "unchanged"
+        },
+        "cam02_trial": {
+          "session_id": "a",
+          "role": "cam02_trial",
+          "filename": "cam02_trial.mp4",
+          "sha256": "302f4781abba9a8501ef4bbcd40f13cc7ee89a11439e278b7983b891f2fce444",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "302f4781abba9a8501ef4bbcd40f13cc7ee89a11439e278b7983b891f2fce444",
+          "integrity_state": "unchanged"
+        }
+      },
+      "runs": {
+        "calibration": {
+          "session_id": "a",
+          "stage": "calibration",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "filtering": {
+          "session_id": "a",
+          "stage": "filtering",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "kinematics": {
+          "session_id": "a",
+          "stage": "kinematics",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "markerAugmentation": {
+          "session_id": "a",
+          "stage": "markerAugmentation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "personAssociation": {
+          "session_id": "a",
+          "stage": "personAssociation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "poseEstimation": {
+          "session_id": "a",
+          "stage": "poseEstimation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "synchronization": {
+          "session_id": "a",
+          "stage": "synchronization",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "triangulation": {
+          "session_id": "a",
+          "stage": "triangulation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        }
+      },
+      "clinically_validated": false,
+      "physical_accuracy_verified": false,
+      "watermark": null
+    },
+    "passport_2": {
+      "session_id": "b",
+      "kind": "real",
+      "badge": "REGISTERED",
+      "state": "KINEMATICS_PASSED",
+      "history": [
+        {
+          "state": "EMPTY",
+          "status": "passed",
+          "message": "Initialized"
+        },
+        {
+          "state": "DRAFT",
+          "status": "passed",
+          "message": "6/6 roles captured"
+        },
+        {
+          "state": "SIX_FILES_PROBED",
+          "status": "passed",
+          "message": "All 6 role clips probed"
+        },
+        {
+          "state": "REGISTERED_ORIGINALS",
+          "status": "passed",
+          "message": "Original video hashes registered"
+        },
+        {
+          "state": "CALIBRATION_PASSED",
+          "status": "passed",
+          "message": "Native camera calibration passed"
+        },
+        {
+          "state": "SYNC_PASSED",
+          "status": "passed",
+          "message": "Native synchronization verified"
+        },
+        {
+          "state": "3D_PASSED",
+          "status": "passed",
+          "message": "3D marker triangulation passed"
+        },
+        {
+          "state": "KINEMATICS_PASSED",
+          "status": "passed",
+          "message": "OpenSim IK joint angles produced"
+        }
+      ],
+      "is_test_only": false,
+      "can_register_real": false,
+      "ready_to_register": false,
+      "captured_count": 6,
+      "missing_roles": [],
+      "board_measurement": null,
+      "sources": {
+        "cam01_board": {
+          "session_id": "b",
+          "role": "cam01_board",
+          "filename": "cam01_board.mp4",
+          "sha256": "464d637cdf8a6f8afd9c2b6083dc89f13344250da4d683e6da5b37237f3692a9",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "464d637cdf8a6f8afd9c2b6083dc89f13344250da4d683e6da5b37237f3692a9",
+          "integrity_state": "unchanged"
+        },
+        "cam01_intrinsics": {
+          "session_id": "b",
+          "role": "cam01_intrinsics",
+          "filename": "cam01_intrinsics.mp4",
+          "sha256": "4d00f959845be33e5a9583bd5c162a3b5b0cbdbe995dbd63cfc219abdcdab707",
+          "bytes": 36,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "4d00f959845be33e5a9583bd5c162a3b5b0cbdbe995dbd63cfc219abdcdab707",
+          "integrity_state": "unchanged"
+        },
+        "cam01_trial": {
+          "session_id": "b",
+          "role": "cam01_trial",
+          "filename": "cam01_trial.mp4",
+          "sha256": "acf37c7584b5aeebc22373784ff0487cda0f38c4492948af8e3652d26d55578a",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "acf37c7584b5aeebc22373784ff0487cda0f38c4492948af8e3652d26d55578a",
+          "integrity_state": "unchanged"
+        },
+        "cam02_board": {
+          "session_id": "b",
+          "role": "cam02_board",
+          "filename": "cam02_board.mp4",
+          "sha256": "168f0a1d27b2f7a31e9c6de82a181cef0f713511410ad46166d71019c147832c",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "168f0a1d27b2f7a31e9c6de82a181cef0f713511410ad46166d71019c147832c",
+          "integrity_state": "unchanged"
+        },
+        "cam02_intrinsics": {
+          "session_id": "b",
+          "role": "cam02_intrinsics",
+          "filename": "cam02_intrinsics.mp4",
+          "sha256": "ebd93b1c36673e9e6b1e20773fc583811653e965dc058a4266fbddeb0c630255",
+          "bytes": 36,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "ebd93b1c36673e9e6b1e20773fc583811653e965dc058a4266fbddeb0c630255",
+          "integrity_state": "unchanged"
+        },
+        "cam02_trial": {
+          "session_id": "b",
+          "role": "cam02_trial",
+          "filename": "cam02_trial.mp4",
+          "sha256": "302f4781abba9a8501ef4bbcd40f13cc7ee89a11439e278b7983b891f2fce444",
+          "bytes": 31,
+          "width": 640,
+          "height": 480,
+          "fps": 30.0,
+          "duration": 1.0,
+          "observed_sha256": "302f4781abba9a8501ef4bbcd40f13cc7ee89a11439e278b7983b891f2fce444",
+          "integrity_state": "unchanged"
+        }
+      },
+      "runs": {
+        "calibration": {
+          "session_id": "b",
+          "stage": "calibration",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "filtering": {
+          "session_id": "b",
+          "stage": "filtering",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "kinematics": {
+          "session_id": "b",
+          "stage": "kinematics",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "markerAugmentation": {
+          "session_id": "b",
+          "stage": "markerAugmentation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "personAssociation": {
+          "session_id": "b",
+          "stage": "personAssociation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "poseEstimation": {
+          "session_id": "b",
+          "stage": "poseEstimation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "synchronization": {
+          "session_id": "b",
+          "stage": "synchronization",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        },
+        "triangulation": {
+          "session_id": "b",
+          "stage": "triangulation",
+          "state": "passed",
+          "passed": 1,
+          "config_sha256": "143e954c386daf76db7834e04147398074a89aa8b9c27d9c0448505afae4e025",
+          "error_message": null,
+          "updated_at_utc": "2026-10-31T15:30:04.921957+00:00"
+        }
+      },
+      "clinically_validated": false,
+      "physical_accuracy_verified": false,
+      "watermark": null
+    },
+    "metrics": {
+      "captured_1": 6,
+      "captured_2": 6,
+      "state_1": "KINEMATICS_PASSED",
+      "state_2": "KINEMATICS_PASSED"
+    }
+  }
+}

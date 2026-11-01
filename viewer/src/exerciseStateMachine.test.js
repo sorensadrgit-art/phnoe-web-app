@@ -7,8 +7,15 @@ import {
   FAULT_CODES,
 } from './exerciseStateMachine.js';
 
+// Explicit complete synthetic observations for the historical protocol tests.
+function createTestTracker(...args) {
+  const tracker=createExerciseTracker(...args); const update=tracker.update;
+  tracker.update=(sample,time)=>update({trunkLean:0,leftValgus:0,rightValgus:0,kneeSymmetry:100,ankleHeightDifference:0,...sample},time);
+  return tracker;
+}
+
 test('Squat tracker transitions through full valid rep cycle and increments counts', () => {
-  const tracker = createExerciseTracker(EXERCISE_TYPES.SQUAT, {
+  const tracker = createTestTracker(EXERCISE_TYPES.SQUAT, {
     targetROM: 80,
     minDurationMs: 100, // lower for test timing
     smoothingWindow: 1,
@@ -57,7 +64,7 @@ test('Squat tracker transitions through full valid rep cycle and increments coun
 });
 
 test('Squat tracker detects INSUFFICIENT_DEPTH when reversing prematurely', () => {
-  const tracker = createExerciseTracker(EXERCISE_TYPES.SQUAT, {
+  const tracker = createTestTracker(EXERCISE_TYPES.SQUAT, {
     targetROM: 90,
     minDurationMs: 50,
     smoothingWindow: 1,
@@ -85,7 +92,7 @@ test('Squat tracker detects INSUFFICIENT_DEPTH when reversing prematurely', () =
 });
 
 test('Squat tracker flags KNEE_VALGUS and EXCESSIVE_TRUNK_LEAN faults', () => {
-  const tracker = createExerciseTracker(EXERCISE_TYPES.SQUAT, {
+  const tracker = createTestTracker(EXERCISE_TYPES.SQUAT, {
     targetROM: 80,
     maxValgus: 8,
     maxTrunkLean: 30,
@@ -128,7 +135,7 @@ test('Squat tracker flags KNEE_VALGUS and EXCESSIVE_TRUNK_LEAN faults', () => {
 });
 
 test('finishSet produces aggregated telemetry with averages and fault breakdown', () => {
-  const tracker = createExerciseTracker(EXERCISE_TYPES.SQUAT, {
+  const tracker = createTestTracker(EXERCISE_TYPES.SQUAT, {
     targetROM: 80,
     minDurationMs: 50,
     smoothingWindow: 1,
@@ -163,7 +170,7 @@ test('finishSet produces aggregated telemetry with averages and fault breakdown'
 });
 
 test('Single-Leg Balance tracking accumulates hold duration and detects trunk sway', () => {
-  const tracker = createExerciseTracker(EXERCISE_TYPES.BALANCE, {
+  const tracker = createTestTracker(EXERCISE_TYPES.BALANCE, {
     maxTrunkLean: 20,
   });
 
@@ -174,21 +181,22 @@ test('Single-Leg Balance tracking accumulates hold duration and detects trunk sw
 
   // Lift right leg (flexion discrepancy > 25)
   time += 100;
-  state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 50, trunkLean: 5 }, time);
+  state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 50, ankleHeightDifference: .3, trunkLean: 5 }, time);
   assert.equal(state.phase, PHASES.BOTTOM_HOLD);
 
   // Maintain hold with good posture
   time += 200;
-  state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 50, trunkLean: 8 }, time);
+  state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 50, ankleHeightDifference: .3, trunkLean: 8 }, time);
   assert.ok(state.balanceHoldSeconds > 0);
 
   // Excessive trunk sway
   time += 100;
-  state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 50, trunkLean: 32 }, time);
+  state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 50, ankleHeightDifference: .3, trunkLean: 32 }, time);
   assert.ok(state.currentFaults.includes(FAULT_CODES.EXCESSIVE_TRUNK_LEAN));
 
   // Foot placed down -> completes hold rep
-  time += 4000; // Total hold duration ~4400ms
+  for(let i=0;i<20;i++){time+=200;tracker.update({leftKneeFlexion:10,rightKneeFlexion:50,ankleHeightDifference:.3,trunkLean:32},time);}
+  time += 100; // Continuous observed hold; gaps are not counted.
   state = tracker.update({ leftKneeFlexion: 10, rightKneeFlexion: 10 }, time);
   assert.equal(state.phase, PHASES.READY);
   assert.equal(state.repCount, 1);

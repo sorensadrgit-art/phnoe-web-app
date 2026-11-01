@@ -2,10 +2,15 @@
 import copy
 import math
 import unittest
+
 from gait_events import (
-    GaitEvidenceError, validate_2d_trajectories, propose_extrema,
-    orient_event_candidates, make_manual_reference, score_manual_reference,
     GAIT_ALGORITHM_VERSION,
+    GaitEvidenceError,
+    make_manual_reference,
+    orient_event_candidates,
+    propose_extrema,
+    score_manual_reference,
+    validate_2d_trajectories,
 )
 
 HASH="a"*64
@@ -90,8 +95,8 @@ class GaitEventTests(unittest.TestCase):
         r=[c for c in right["candidates"] if c["foot_point"]=="heel" and c["extremum"]=="max"]
         l=[c for c in left["candidates"] if c["foot_point"]=="heel" and c["extremum"]=="max"]
         self.assertGreater(len(r),0)
-        self.assertEqual(set(c["event_type"] for c in r),{"candidate_initial_contact"})
-        self.assertEqual(set(c["event_type"] for c in l),{"unassigned_extremum"})
+        self.assertEqual({c["event_type"] for c in r},{"candidate_initial_contact"})
+        self.assertEqual({c["event_type"] for c in l},{"unassigned_extremum"})
         self.assertEqual(right["screen_forward"],"right")
         self.assertEqual(right["manual_validation_status"],"not_reviewed")
         with self.assertRaises(GaitEvidenceError):
@@ -110,8 +115,8 @@ class GaitEventTests(unittest.TestCase):
         self.assertEqual(ref["status"],"MANUAL_OBSERVATIONS_NOT_CLINICAL_GROUND_TRUTH")
         self.assertEqual(len(ref["labels"]),2)
         for wrong in [
-            dict(reviewer="",confirmed=True),
-            dict(reviewer="PT",confirmed=False),
+            {"reviewer": "", "confirmed": True},
+            {"reviewer": "PT", "confirmed": False},
         ]:
             with self.assertRaises(GaitEvidenceError):
                 make_manual_reference(evidence,labels,**wrong)

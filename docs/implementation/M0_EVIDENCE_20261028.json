@@ -1,0 +1,579 @@
+{
+  "schema": "kinelab.m0.evidence.v1",
+  "generated_utc": "2026-10-28T20:18:09.757541+00:00",
+  "tested_head": "7efd108caf4244d10672014a9cb0f7afceb253ff",
+  "audited_revision": "ffde4be70d0a501980d1d22aac3dea1c91006ff9",
+  "plan_approval": "PENDING",
+  "clinical_release": "NO_GO",
+  "raw_artifacts": "local ignored dist/m0-20261028; hashes do not make absent raw files available on another machine",
+  "scope": "synthetic disposable fixtures; no patient recordings; no application fixes",
+  "source_environment": {
+    "audited_revision": "ffde4be70d0a501980d1d22aac3dea1c91006ff9",
+    "head": "7efd108caf4244d10672014a9cb0f7afceb253ff",
+    "branch": "feat/kinelab-production-readiness-20261028",
+    "commits_ahead": 4,
+    "initial_worktree": "clean; captured before M0",
+    "added_files": [
+      "AGENTS.md",
+      "ANTIGRAVITY-START.md",
+      "OPEN-AGENT-START.txt",
+      "OPEN-ANTIGRAVITY-WORKSPACE.cmd",
+      "START-CLAUDE-AGENT.cmd",
+      "START-CODEX-AGENT.cmd",
+      "START-HERE-AGENTS.md",
+      "docs/BASELINE_QA_20261028.md",
+      "docs/PRODUCTION_READINESS_HANDOFF.md",
+      "docs/audits/.gitattributes",
+      "docs/audits/KineLab_PT_Production_Readiness_Report.md",
+      "docs/implementation/DECISION_REGISTER.md",
+      "docs/implementation/MASTER_PLAN.md",
+      "docs/implementation/TASK_BOARD.md",
+      "docs/implementation/TASK_CATALOG.md",
+      "docs/implementation/VERIFICATION_LOG.md",
+      "tools/package_agent_handoff.py"
+    ],
+    "changed_preexisting_files": [],
+    "audit_sha256": "536954681b5ea2e20bf5f5acc9cab7f9c864311bd88b46910bb6e16c53afb0cc",
+    "audit_bytes": 114524,
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python_scientific": "3.13.16",
+    "native_imports": {
+      "OpenSim": "4.6",
+      "Pose2Sim": "0.10.49",
+      "onnxruntime": "1.31.0",
+      "numpy": "2.5.4"
+    },
+    "node": "v24.19.0",
+    "npm": "12.1.0",
+    "installed_frontend": {
+      "react": "19.3.1",
+      "react-dom": "19.3.1",
+      "vite": "7.3.7",
+      "three": "0.180.0",
+      "@react-three/fiber": "9.8.2",
+      "@react-three/drei": "10.7.9"
+    },
+    "ci_workflows_present": false,
+    "declared_frontend_scripts": {
+      "dev": "vite --host 127.0.0.1",
+      "build": "vite build",
+      "build:cloud": "vite build --mode cloud",
+      "preview": "vite preview --host 127.0.0.1",
+      "test": "node --test src/motionData.test.js src/syncPlayback.test.js src/unifiedLogic.test.js src/unifiedModel.test.js src/liveKinematics.test.js src/exerciseStateMachine.test.js src/deploymentMode.test.js"
+    }
+  },
+  "command_receipts": [
+    {
+      "label": "boundary-probes",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "dist\\m0-20261028\\boundary_probes.py"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:04:08.261408+00:00",
+      "finished_utc": "2026-10-28T20:04:09.456562+00:00",
+      "elapsed_seconds": 1.194,
+      "exit_code": 0,
+      "log": "boundary-probes.log",
+      "sha256": "ff7d0a5991fb3aaa59faf4a3cb1a464cf11a35f0d7e4949a3abc511d72866126"
+    },
+    {
+      "label": "cloud-build",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        "npm.cmd",
+        "--prefix",
+        "viewer",
+        "run",
+        "build:cloud"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:01:38.445485+00:00",
+      "finished_utc": "2026-10-28T20:01:47.979732+00:00",
+      "elapsed_seconds": 9.534,
+      "exit_code": 0,
+      "log": "cloud-build.log",
+      "sha256": "d7c4efc82755f00761f3c8da009d8131a241cf5a5a71ac3efb06e09e8f775b12"
+    },
+    {
+      "label": "desktop-build",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        "npm.cmd",
+        "--prefix",
+        "viewer",
+        "run",
+        "build"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:02:07.732166+00:00",
+      "finished_utc": "2026-10-28T20:02:11.869534+00:00",
+      "elapsed_seconds": 4.137,
+      "exit_code": 0,
+      "log": "desktop-build.log",
+      "sha256": "f359988a070f7d7859c720ac86a28d4fcd1a969343869942b9349f791fe55444"
+    },
+    {
+      "label": "extracted-first-launch",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "dist\\m0-20261028\\extracted-runtime\\KineLabPT-v1.0.0-windows-x64\\app\\t6_launcher.py",
+        "--no-browser"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:05:51.708498+00:00",
+      "finished_utc": "2026-10-28T20:05:52.891600+00:00",
+      "elapsed_seconds": 1.183,
+      "exit_code": 1,
+      "log": "extracted-first-launch.log",
+      "sha256": "fda11724cb26f340f91c9ff2570ab01479eca0aeca9ed64fe7dde6f93e46ba42"
+    },
+    {
+      "label": "extracted-prepared-launch",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "dist\\m0-20261028\\start_smoke.py"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:06:22.915048+00:00",
+      "finished_utc": "2026-10-28T20:06:24.774371+00:00",
+      "elapsed_seconds": 1.858,
+      "exit_code": 0,
+      "log": "extracted-prepared-launch.log",
+      "sha256": "a5432b1f033d8429e597a19c03f7cc00effbb706f5d8a7cf576a1fae592757cf"
+    },
+    {
+      "label": "frontend-test",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        "npm.cmd",
+        "--prefix",
+        "viewer",
+        "test"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:00:18.876857+00:00",
+      "finished_utc": "2026-10-28T20:00:19.493468+00:00",
+      "elapsed_seconds": 0.617,
+      "exit_code": 0,
+      "log": "frontend-test.log",
+      "sha256": "791b6876d5b19e9e9e4b4b1a46d96eb9b13c9edc5830e680040dc52902c25e38"
+    },
+    {
+      "label": "isolated-browser-http-smoke",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "dist\\m0-20261028\\finish_smoke.py"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:08:59.788932+00:00",
+      "finished_utc": "2026-10-28T20:09:05.675494+00:00",
+      "elapsed_seconds": 5.887,
+      "exit_code": 1,
+      "log": "isolated-browser-http-smoke.log",
+      "sha256": "60e718e68653cefa389a417a9e31fba55322c0cadf4b966d7bbff7ac6fa421b1"
+    },
+    {
+      "label": "missing-lint",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        "npm.cmd",
+        "--prefix",
+        "viewer",
+        "run",
+        "lint"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:05:15.002878+00:00",
+      "finished_utc": "2026-10-28T20:05:16.635095+00:00",
+      "elapsed_seconds": 1.632,
+      "exit_code": 1,
+      "log": "missing-lint.log",
+      "sha256": "37793f8645f95e0c1274e451c9232600c52bb8c901668aba1fb9fa6b82699333"
+    },
+    {
+      "label": "missing-typecheck",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        "npm.cmd",
+        "--prefix",
+        "viewer",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:05:16.777529+00:00",
+      "finished_utc": "2026-10-28T20:05:17.164524+00:00",
+      "elapsed_seconds": 0.388,
+      "exit_code": 1,
+      "log": "missing-typecheck.log",
+      "sha256": "c04dc403b3e659a175700490195886ef1853a100366c01e8277c281b103c990a"
+    },
+    {
+      "label": "omitted-gait-test",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        "node",
+        "--test",
+        "viewer/src/gaitReviewLogic.test.cjs"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:01:38.465836+00:00",
+      "finished_utc": "2026-10-28T20:01:38.634042+00:00",
+      "elapsed_seconds": 0.168,
+      "exit_code": 0,
+      "log": "omitted-gait-test.log",
+      "sha256": "321172d66ca2deb05a53ba9c206bb19407c4c337d10f869eaca7ffebb4e25882"
+    },
+    {
+      "label": "package-build",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "tools/build_offline_distribution.py"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:04:35.111961+00:00",
+      "finished_utc": "2026-10-28T20:04:36.520910+00:00",
+      "elapsed_seconds": 1.408,
+      "exit_code": 0,
+      "log": "package-build.log",
+      "sha256": "56041a7365d0b6ad74d711fef64867e2c485ca375c75619303bed6e38ada70aa"
+    },
+    {
+      "label": "package-integrity-recheck",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "dist\\m0-20261028\\check_package.py"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:05:51.370379+00:00",
+      "finished_utc": "2026-10-28T20:05:51.546990+00:00",
+      "elapsed_seconds": 0.177,
+      "exit_code": 0,
+      "log": "package-integrity-recheck.log",
+      "sha256": "bb1a063a5e792e45db1c11f1d84430cdd77d3095243b331c26dab1b51a8f8401"
+    },
+    {
+      "label": "package-integrity",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "dist\\m0-20261028\\check_package.py"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:05:20.787820+00:00",
+      "finished_utc": "2026-10-28T20:05:20.934086+00:00",
+      "elapsed_seconds": 0.146,
+      "exit_code": 1,
+      "log": "package-integrity.log",
+      "sha256": "1f24b665bf1f663502e8017921995351bbb3d4848e9647174044fc1a294b533d"
+    },
+    {
+      "label": "package-tests",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_offline_distribution.py",
+        "-v"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:05:14.959146+00:00",
+      "finished_utc": "2026-10-28T20:05:15.297292+00:00",
+      "elapsed_seconds": 0.339,
+      "exit_code": 0,
+      "log": "package-tests.log",
+      "sha256": "ca3258d528301786860a8453394315da56883a280a8e8ab0e0115fad54a5bdb1"
+    },
+    {
+      "label": "python-full",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:02:28.095826+00:00",
+      "finished_utc": "2026-10-28T20:03:43.013930+00:00",
+      "elapsed_seconds": 74.92,
+      "exit_code": 0,
+      "log": "python-full.log",
+      "sha256": "4de875bff02e015c7761bcf5f3c1539224a015bce80badfc504f86c6c8d4744c"
+    },
+    {
+      "label": "portable-boundary-probes",
+      "command": [
+        "C:\\Users\\soren\\AppData\\Local\\Headroom\\headroom\\bin\\rtk.exe",
+        "proxy",
+        ".\\.venv\\Scripts\\python.exe",
+        "-B",
+        "docs\\implementation\\evidence\\m0_boundary_probes.py"
+      ],
+      "cwd": "C:\\Users\\soren\\Documents\\Projects\\KineLab-PT-Production-Agent-Workspace",
+      "started_utc": "2026-10-28T20:18:04.747627+00:00",
+      "finished_utc": "2026-10-28T20:18:06.322404+00:00",
+      "elapsed_seconds": 1.575,
+      "exit_code": 0,
+      "log": "portable-boundary-probes.log",
+      "sha256": "ff7d0a5991fb3aaa59faf4a3cb1a464cf11a35f0d7e4949a3abc511d72866126"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "dist/m0-20261028/audited-to-head.diffstat.txt",
+      "bytes": 1120,
+      "sha256": "56420a0c6e1387512eb298f8b46bbf50c71fcabf89712f593d8809148989f80f"
+    },
+    {
+      "path": "dist/m0-20261028/boundary-probes.log",
+      "bytes": 1323,
+      "sha256": "ff7d0a5991fb3aaa59faf4a3cb1a464cf11a35f0d7e4949a3abc511d72866126"
+    },
+    {
+      "path": "dist/m0-20261028/boundary_probes.py",
+      "bytes": 5374,
+      "sha256": "c82c562ce38028755f24144b3862200b996e0cdc059e8040d00477374a4c2b02"
+    },
+    {
+      "path": "dist/m0-20261028/browser-check-0.log",
+      "bytes": 1330,
+      "sha256": "31b8eece1c202ed463f98093560784e00b65f350b5889c1f24fba7b59d558303"
+    },
+    {
+      "path": "dist/m0-20261028/browser-check-1.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "dist/m0-20261028/browser-check-2.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "dist/m0-20261028/browser-check-3.log",
+      "bytes": 384,
+      "sha256": "cfbb4bf20a33ea44a3fdfb0424af6c7a87495facd545e841c6edfac401fd3585"
+    },
+    {
+      "path": "dist/m0-20261028/browser-open.log",
+      "bytes": 73,
+      "sha256": "58b99dc9ac72081f19aca43fc9f1fedd14ccda8aedee6d07cd28740df3170513"
+    },
+    {
+      "path": "dist/m0-20261028/browser-sessions.png",
+      "bytes": 152190,
+      "sha256": "66be267184e5f567b9cb9e53e8271431a4d9ab3b2ea55dd24e8e40f0ccdf7c09"
+    },
+    {
+      "path": "dist/m0-20261028/check_package.py",
+      "bytes": 1803,
+      "sha256": "9085f7673f0c10d632eeb80a656793c6792a2020b2853a64fcf79cf1d38157dd"
+    },
+    {
+      "path": "dist/m0-20261028/cloud-artifacts.json",
+      "bytes": 686,
+      "sha256": "69a85443881bc6e17d61daa27a69f3d223ae8f0c05654e1806277e50b8f0e7e2"
+    },
+    {
+      "path": "dist/m0-20261028/cloud-build.log",
+      "bytes": 1012,
+      "sha256": "d7c4efc82755f00761f3c8da009d8131a241cf5a5a71ac3efb06e09e8f775b12"
+    },
+    {
+      "path": "dist/m0-20261028/desktop-build.log",
+      "bytes": 1164,
+      "sha256": "f359988a070f7d7859c720ac86a28d4fcd1a969343869942b9349f791fe55444"
+    },
+    {
+      "path": "dist/m0-20261028/extracted-first-launch.log",
+      "bytes": 156,
+      "sha256": "fda11724cb26f340f91c9ff2570ab01479eca0aeca9ed64fe7dde6f93e46ba42"
+    },
+    {
+      "path": "dist/m0-20261028/extracted-prepared-launch.log",
+      "bytes": 210,
+      "sha256": "a5432b1f033d8429e597a19c03f7cc00effbb706f5d8a7cf576a1fae592757cf"
+    },
+    {
+      "path": "dist/m0-20261028/finish_smoke.py",
+      "bytes": 2498,
+      "sha256": "bc457d5e0314da4f81132653585d4f87dfde34f62e3a86d4f50b6087104ed53e"
+    },
+    {
+      "path": "dist/m0-20261028/frontend-test.log",
+      "bytes": 4124,
+      "sha256": "791b6876d5b19e9e9e4b4b1a46d96eb9b13c9edc5830e680040dc52902c25e38"
+    },
+    {
+      "path": "dist/m0-20261028/isolated-browser-http-smoke.log",
+      "bytes": 417,
+      "sha256": "60e718e68653cefa389a417a9e31fba55322c0cadf4b966d7bbff7ac6fa421b1"
+    },
+    {
+      "path": "dist/m0-20261028/launcher-cpu.json",
+      "bytes": 110,
+      "sha256": "a0ff559571d6319bc84fa6fcba68d6954b5775b9ca0bd2ec3c86745e6d6f8238"
+    },
+    {
+      "path": "dist/m0-20261028/launcher-process-tree-cpu.json",
+      "bytes": 269,
+      "sha256": "6a02cfc2cb9d39e7c0b2f5961ef82c0e741884408797d80772dfb28c50ddd774"
+    },
+    {
+      "path": "dist/m0-20261028/missing-lint.log",
+      "bytes": 405,
+      "sha256": "37793f8645f95e0c1274e451c9232600c52bb8c901668aba1fb9fa6b82699333"
+    },
+    {
+      "path": "dist/m0-20261028/missing-typecheck.log",
+      "bytes": 323,
+      "sha256": "c04dc403b3e659a175700490195886ef1853a100366c01e8277c281b103c990a"
+    },
+    {
+      "path": "dist/m0-20261028/omitted-gait-test.log",
+      "bytes": 836,
+      "sha256": "321172d66ca2deb05a53ba9c206bb19407c4c337d10f869eaca7ffebb4e25882"
+    },
+    {
+      "path": "dist/m0-20261028/package-build.log",
+      "bytes": 1493,
+      "sha256": "56041a7365d0b6ad74d711fef64867e2c485ca375c75619303bed6e38ada70aa"
+    },
+    {
+      "path": "dist/m0-20261028/package-integrity-recheck.log",
+      "bytes": 495,
+      "sha256": "bb1a063a5e792e45db1c11f1d84430cdd77d3095243b331c26dab1b51a8f8401"
+    },
+    {
+      "path": "dist/m0-20261028/package-integrity.log",
+      "bytes": 700,
+      "sha256": "1f24b665bf1f663502e8017921995351bbb3d4848e9647174044fc1a294b533d"
+    },
+    {
+      "path": "dist/m0-20261028/package-tests.log",
+      "bytes": 786,
+      "sha256": "ca3258d528301786860a8453394315da56883a280a8e8ab0e0115fad54a5bdb1"
+    },
+    {
+      "path": "dist/m0-20261028/python-full.log",
+      "bytes": 35914,
+      "sha256": "4de875bff02e015c7761bcf5f3c1539224a015bce80badfc504f86c6c8d4744c"
+    },
+    {
+      "path": "dist/m0-20261028/run_check.py",
+      "bytes": 1421,
+      "sha256": "fdabd7c357bd08f94c13a1ae36124fa067fe674afc2bde1042533d236c9f26de"
+    },
+    {
+      "path": "dist/m0-20261028/smoke-observations.json",
+      "bytes": 840,
+      "sha256": "2b199660baf9c19476f4ec598363280933a5dadc1e149e99162f9aab3b1c594a"
+    },
+    {
+      "path": "dist/m0-20261028/source-environment.json",
+      "bytes": 1988,
+      "sha256": "6c67c265b621187d081f95034bf87ab787bb22da4c337463e360c23913ef5c16"
+    },
+    {
+      "path": "dist/m0-20261028/start_smoke.py",
+      "bytes": 1875,
+      "sha256": "c4b5d4ff0ece3ee38fd5a968d04aafc0ac8e0c903eb0b8e2f5419ca45269cde6"
+    },
+    {
+      "path": "docs/implementation/evidence/m0_boundary_probes.py",
+      "bytes": 5473,
+      "sha256": "89ab84ad259b2846ae803486b4f524b2b776d21a9f1fdc9952f103b4882e7543"
+    },
+    {
+      "path": "dist/m0-20261028/portable-boundary-probes.log",
+      "bytes": 1323,
+      "sha256": "ff7d0a5991fb3aaa59faf4a3cb1a464cf11a35f0d7e4949a3abc511d72866126"
+    }
+  ],
+  "smoke": {
+    "overall": "PARTIAL",
+    "http_checks": [
+      {
+        "path": "/",
+        "authenticated": false,
+        "status": 200
+      },
+      {
+        "path": "/api/v1/health",
+        "authenticated": false,
+        "status": 401
+      },
+      {
+        "path": "/api/v1/health",
+        "authenticated": true,
+        "status": 200
+      },
+      {
+        "path": "/api/v1/sessions",
+        "authenticated": true,
+        "status": 200,
+        "empty": true
+      }
+    ],
+    "browser_views": [
+      "Overview",
+      "Sessions"
+    ],
+    "console_buffer": "empty",
+    "page_error_buffer": "empty",
+    "favicon_status": 404,
+    "shutdown_http_status": 200,
+    "shutdown_process_exited": true,
+    "instance_state_after_5_seconds": "PRESENT",
+    "manual_owned_credential_cleanup": 2,
+    "owned_browser_closed": true,
+    "physical_camera": "NOT_TESTED"
+  },
+  "notes": [
+    "Cloud/gait child commands returned 0; initial outer runner printing failed under cp1252 after writing valid receipts.",
+    "package-integrity exit 1 was a scratch checker path error; package-integrity-recheck is the completed byte/inventory verification.",
+    "isolated-browser-http-smoke exit 1 records residual instance state after successful HTTP checks; later process exit confirmed and test-owned state removed.",
+    "Python full suite used previous package; fresh generated package subsequently passed all four package tests and independent integrity verification.",
+    "Portable baseline counterexample script is preserved under docs/implementation/evidence and independently rerun; its success reproduces failures and is not a product acceptance gate."
+  ]
+}

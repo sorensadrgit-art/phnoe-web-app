@@ -6,9 +6,9 @@ startup. User must choose which original shortcut to launch.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
 
 ROOT = Path(__file__).resolve().parent
@@ -49,7 +49,7 @@ WARNING = "#EFC19D"
 
 def _find_entry(entry_key: str) -> dict:
     if not isinstance(entry_key, str):
-        raise ValueError("Only an existing KineLab launcher action may be selected")
+        raise ValueError("Only an existing KineLab launcher action may be selected")  # noqa: TRY004 - tested contract: any invalid launcher key raises ValueError (test_no_unknown_commands_or_path_traversal)
     for item in HUB_ENTRIES:
         if item["key"] == entry_key:
             return item
@@ -159,6 +159,12 @@ class KineLabHub(tk.Tk):
 
 
 def main():
+    from runtime_config import retired_entrypoint
+    return retired_entrypoint("kinelab_hub.py",
+        "It opens archived original shortcuts whose targets and data roots are outside this candidate.")
+
+
+def legacy_main():
     app=KineLabHub()
     if "--smoke" in sys.argv:
         try:

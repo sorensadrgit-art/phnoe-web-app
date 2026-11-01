@@ -11,11 +11,11 @@ import argparse
 import datetime
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import subprocess
 import zipfile
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST_NAME = "KineLabPT-v1.0.0-windows-x64"
@@ -216,7 +216,7 @@ Read `03-Agent-Guide/OPEN-AGENT-START.txt`, `03-Agent-Guide/AGENTS.md` and `03-A
     (target / "README-FIRST.md").write_text(readme, encoding="utf-8")
 
     report = {
-        "prepared_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "prepared_utc": datetime.datetime.now(datetime.UTC).isoformat(),
         "desktop": str(target),
         "agent_workspace": str(ROOT),
         "git_branch": branch,

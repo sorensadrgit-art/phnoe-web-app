@@ -1,11 +1,13 @@
 """Tests first: bounded 2D squat phase/rep proposals, never real clinical accuracy."""
 import copy
-import math
 import unittest
 
 from squat_events import (
-    SquatEvidenceError, SQUAT_ALGORITHM_VERSION,
-    analyze_squats, make_manual_rep_reference, compare_manual_reps,
+    SQUAT_ALGORITHM_VERSION,
+    SquatEvidenceError,
+    analyze_squats,
+    compare_manual_reps,
+    make_manual_rep_reference,
 )
 
 ROLE = "cam01_trial"

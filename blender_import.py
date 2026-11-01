@@ -1,10 +1,14 @@
 """Animated marker/segment GLB export, Blender 4.5+ headless. JSON Y-up -> Blender Z-up."""
-import json,math,sys
+import json
+import math
+import sys
 from fractions import Fraction
 from pathlib import Path
+
 sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from export_motion import load_json,sha256_file,validate_motion
+from export_motion import load_json, sha256_file, validate_motion
+
 
 def basis_coordinates(v):
  return None if v is None else (v[0],-v[2],v[1])
@@ -37,7 +41,7 @@ def main():
  import bpy
  args=sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else []
  if len(args)!=3:raise ValueError("Usage: blender -b --python blender_import.py -- in.json out.blend out.glb")
- inp,blend,glb=map(lambda x:Path(x).resolve(),args)
+ inp,blend,glb=(Path(x).resolve() for x in args)
  if blend==glb or inp in (blend,glb):raise ValueError("OUTPUT_EXISTS: Input/output paths must be distinct")
  if any(p.exists() or p.is_symlink() for p in (blend,glb)):raise ValueError("OUTPUT_EXISTS: Refusing overwrite")
  data=validate_motion(load_json(inp))

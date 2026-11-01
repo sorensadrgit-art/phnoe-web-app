@@ -2,6 +2,17 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Grid, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
+import { isTargetZoneReached } from './liveDisplayHelper.js';
+import { EXERCISE_TYPES } from './exerciseStateMachine.js';
+import {
+  AVATAR_REQUIRED_DISCLAIMER,
+  AVATAR_COLLAPSED_NOTICE,
+  AVATAR_CONTEXT_LOST_NOTICE,
+  AVATAR_UNAVAILABLE_WEBGL_NOTICE,
+  AVATAR_UNMEASURED_KINEMATICS_NOTICE,
+  createContextLossManager,
+  isWebGLSupported,
+} from './avatarLifecycle.js';
 
 // Major MediaPipe joints used by the HUD and 3D avatar.
 const MAJOR_JOINTS = new Set([11, 12, 23, 24, 25, 26, 27, 28]);
@@ -31,7 +42,8 @@ function getNeutralPositions() {
   return pts;
 }
 
-function AvatarRig({ landmarks, mirrored = true, targetROM = 80, currentDepth = 0 }) {
+function AvatarRig({ landmarks, mirrored = true, targetROM = 80, currentDepth = null, exerciseType = EXERCISE_TYPES.SQUAT, contextLost = false }) {
+  const { gl } = useThree();
   const jointsRef = useRef([]);
   const bonesRef = useRef([]);
   const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
@@ -43,6 +55,10 @@ function AvatarRig({ landmarks, mirrored = true, targetROM = 80, currentDepth = 
   const currentPositions = useRef(getNeutralPositions());
 
   useFrame((_, delta) => {
+    // If WebGL context is lost or document is hidden, halt RAF computation immediately
+    if (contextLost || gl?.getContext?.()?.isContextLost?.()) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+
     const lerpFactor = Math.min(1.0, delta * 25); // Responsive 60fps tracking
 
     if (landmarks && landmarks.length > 0) {
@@ -97,7 +113,7 @@ function AvatarRig({ landmarks, mirrored = true, targetROM = 80, currentDepth = 
     });
   });
 
-  const inTargetZone = currentDepth >= (targetROM - 5);
+  const inTargetZone = isTargetZoneReached(currentDepth, targetROM, exerciseType);
 
   return (
     <group>
@@ -157,17 +173,206 @@ function CameraController({ preset, controlsRef }) {
   return null;
 }
 
+class TwinCanvasErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error) {
+    console.warn('3D Digital Twin WebGL Canvas failed to mount:', error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="uw-twin-unavailable-banner"
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            minHeight: 280,
+            padding: 24,
+            textAlign: 'center',
+            background: '#080c18',
+            color: '#94a3b8',
+            fontSize: '0.85rem',
+            lineHeight: 1.5,
+          }}
+        >
+          {AVATAR_UNAVAILABLE_WEBGL_NOTICE}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function LiveDigitalTwin({
   landmarks,
+  kinematics = null,
   mirrored = true,
   targetROM = 80,
-  currentDepth = 0,
+  currentDepth = null,
+  exerciseType = EXERCISE_TYPES.SQUAT,
+  documentHidden = false,
+  initialContextLost = false,
+  webglSupported: webglSupportedProp,
+  avatarVisible = true,
 }) {
   const [viewAngle, setViewAngle] = useState('front');
+  const [contextLost, setContextLost] = useState(initialContextLost);
+  const [sceneKey, setSceneKey] = useState(0);
+  const [isDocumentHidden, setIsDocumentHidden] = useState(
+    typeof document !== 'undefined' ? document.hidden : Boolean(documentHidden)
+  );
+  const [isSupported, setIsSupported] = useState(() =>
+    webglSupportedProp !== undefined ? Boolean(webglSupportedProp) : isWebGLSupported()
+  );
   const controlsRef = useRef(null);
+  const glRef = useRef(null);
+  const canvasElementRef = useRef(null);
+  const releaseListenersRef = useRef(null);
+
+  // Sync WebGL support prop override
+  useEffect(() => {
+    if (webglSupportedProp !== undefined) {
+      setIsSupported(Boolean(webglSupportedProp));
+    }
+  }, [webglSupportedProp]);
+
+  // Sync prop changes for document visibility
+  useEffect(() => {
+    if (documentHidden !== undefined) {
+      setIsDocumentHidden(Boolean(documentHidden));
+    }
+  }, [documentHidden]);
+
+  // Sync initial context lost prop changes
+  useEffect(() => {
+    if (initialContextLost !== undefined) {
+      setContextLost(Boolean(initialContextLost));
+    }
+  }, [initialContextLost]);
+
+  // Document visibility listener to suspend RAF loop when tab is hidden
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisibilityChange = () => {
+      setIsDocumentHidden(document.hidden);
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  const releaseCanvas = () => {
+    // Release only component-owned listeners; R3F owns renderer disposal.
+    releaseListenersRef.current?.();
+    releaseListenersRef.current = null;
+    canvasElementRef.current = null;
+    glRef.current = null;
+  };
+
+  const handleRestoreView = () => {
+    // A remount request is not evidence of a healthy replacement context.
+    setContextLost(true);
+    releaseCanvas();
+    setSceneKey(k => k + 1);
+  };
+
+  const handleCreated = ({ gl }) => {
+    releaseCanvas();
+    const canvas = gl?.domElement;
+    if (!canvas) return;
+    glRef.current = gl;
+    canvasElementRef.current = canvas;
+    const isCurrentCanvas = () => canvasElementRef.current === canvas && glRef.current === gl;
+    const isHealthy = () => gl.getContext?.()?.isContextLost?.() === false;
+    const contextManager = createContextLossManager({
+      onContextLost: () => {
+        if (isCurrentCanvas()) setContextLost(true);
+      },
+      onContextRestored: () => {
+        if (isCurrentCanvas() && isHealthy()) setContextLost(false);
+      },
+    });
+    canvas.addEventListener('webglcontextlost', contextManager.handleContextLost);
+    canvas.addEventListener('webglcontextrestored', contextManager.handleContextRestored);
+    releaseListenersRef.current = () => {
+      canvas.removeEventListener('webglcontextlost', contextManager.handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', contextManager.handleContextRestored);
+    };
+    setContextLost(!isHealthy());
+  };
+
+  useEffect(() => {
+    // No dependency cleanup: reopening may create Canvas before passive effects run.
+    if (!avatarVisible || !isSupported) releaseCanvas();
+  }, [avatarVisible, isSupported]);
+
+  useEffect(() => {
+    return () => releaseCanvas();
+  }, []);
+
+  const isSuspended = isDocumentHidden || documentHidden || contextLost;
+  const frameloop = isSuspended ? 'never' : 'always';
+  const isKinematicsMissing = currentDepth === null || kinematics === null || !landmarks || landmarks.length === 0;
+
+  if (!avatarVisible) {
+    return (
+      <div
+        className="uw-twin-collapsed-placeholder uw-twin-unmeasured-disclaimer-banner"
+        role="status"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          minHeight: 200,
+          padding: 16,
+          textAlign: 'center',
+          background: '#0a0f1d',
+          borderRadius: 8,
+          color: '#94a3b8',
+          fontSize: '0.85rem',
+          lineHeight: 1.5,
+          border: '1px dashed rgba(255, 255, 255, 0.15)',
+        }}
+      >
+        <div>{AVATAR_COLLAPSED_NOTICE}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="uw-live-twin-container" style={{ position: 'relative', width: '100%', height: '100%', minHeight: 320, background: '#0a0f1d', borderRadius: 8, overflow: 'hidden' }}>
+      {isKinematicsMissing && (
+        <div
+          className="uw-twin-unmeasured-banner"
+          role="status"
+          style={{
+            position: 'absolute',
+            top: 12,
+            left: 12,
+            zIndex: 15,
+            background: 'rgba(15, 23, 42, 0.85)',
+            color: '#fbbf24',
+            padding: '4px 10px',
+            borderRadius: 6,
+            border: '1px solid rgba(251, 191, 36, 0.3)',
+            fontSize: '0.75rem',
+            pointerEvents: 'none',
+          }}
+        >
+          {AVATAR_UNMEASURED_KINEMATICS_NOTICE}
+        </div>
+      )}
       {/* 3D Viewport Controls */}
       <div
         className="uw-twin-toolbar"
@@ -234,45 +439,120 @@ export default function LiveDigitalTwin({
         </button>
       </div>
 
-      <Canvas
-        camera={{ position: [0, 0.9, 2.8], fov: 45 }}
-        gl={{ antialias: true, alpha: false }}
-        style={{ width: '100%', height: '100%' }}
-      >
-        <color attach="background" args={['#080c18']} />
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[5, 8, 5]} intensity={1.2} />
-        <directionalLight position={[-5, 5, -5]} intensity={0.5} />
+      {!isSupported ? (
+        <div
+          className="uw-twin-unavailable-banner"
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            minHeight: 280,
+            padding: 24,
+            textAlign: 'center',
+            background: '#080c18',
+            color: '#94a3b8',
+            fontSize: '0.85rem',
+            lineHeight: 1.5,
+          }}
+        >
+          {AVATAR_UNAVAILABLE_WEBGL_NOTICE}
+        </div>
+      ) : (
+        <TwinCanvasErrorBoundary>
+          <Canvas
+            key={`twin-canvas-${sceneKey}`}
+            frameloop={frameloop}
+            onCreated={handleCreated}
+            camera={{ position: [0, 0.9, 2.8], fov: 45 }}
+            gl={{ antialias: true, alpha: false }}
+            style={{ width: '100%', height: '100%' }}
+          >
+            {!contextLost && (
+              <>
+                <color attach="background" args={['#080c18']} />
+                <ambientLight intensity={0.7} />
+                <directionalLight position={[5, 8, 5]} intensity={1.2} />
+                <directionalLight position={[-5, 5, -5]} intensity={0.5} />
 
-        <Grid
-          position={[0, -0.15, 0]}
-          args={[6, 6]}
-          cellSize={0.2}
-          cellThickness={0.8}
-          cellColor="#1e293b"
-          sectionSize={1.0}
-          sectionThickness={1.2}
-          sectionColor="#334155"
-          fadeDistance={5}
-        />
+                <Grid
+                  position={[0, -0.15, 0]}
+                  args={[6, 6]}
+                  cellSize={0.2}
+                  cellThickness={0.8}
+                  cellColor="#1e293b"
+                  sectionSize={1.0}
+                  sectionThickness={1.2}
+                  sectionColor="#334155"
+                  fadeDistance={5}
+                />
 
-        <AvatarRig
-          landmarks={landmarks}
-          mirrored={mirrored}
-          targetROM={targetROM}
-          currentDepth={currentDepth}
-        />
+                <AvatarRig
+                  landmarks={landmarks}
+                  mirrored={mirrored}
+                  targetROM={targetROM}
+                  currentDepth={currentDepth}
+                  exerciseType={exerciseType}
+                  contextLost={contextLost}
+                />
 
-        <OrbitControls
-          ref={controlsRef}
-          target={[0, 0.8, 0]}
-          minDistance={1.0}
-          maxDistance={6.0}
-          enablePan={true}
-        />
+                <OrbitControls
+                  ref={controlsRef}
+                  target={[0, 0.8, 0]}
+                  minDistance={1.0}
+                  maxDistance={6.0}
+                  enablePan={true}
+                />
 
-        <CameraController preset={viewAngle} controlsRef={controlsRef} />
-      </Canvas>
+                <CameraController preset={viewAngle} controlsRef={controlsRef} />
+              </>
+            )}
+          </Canvas>
+
+          {contextLost && (
+            <div
+              className="uw-twin-context-lost-overlay"
+              role="status"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(8, 12, 24, 0.92)',
+                color: '#f59e0b',
+                padding: 24,
+                textAlign: 'center',
+                fontSize: '0.85rem',
+                lineHeight: 1.5,
+                zIndex: 20,
+              }}
+            >
+              <div style={{ marginBottom: 12 }}>
+                {AVATAR_CONTEXT_LOST_NOTICE}
+              </div>
+              <button
+                type="button"
+                className="uw-twin-btn-restore"
+                onClick={handleRestoreView}
+                style={{
+                  background: '#0284c7',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '6px 14px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Restore 3D View
+              </button>
+            </div>
+          )}
+        </TwinCanvasErrorBoundary>
+      )}
 
       <div
         style={{
@@ -284,7 +564,7 @@ export default function LiveDigitalTwin({
           pointerEvents: 'none',
         }}
       >
-        3D Digital Twin · Drag to rotate · Scroll to zoom
+        {AVATAR_REQUIRED_DISCLAIMER}
       </div>
     </div>
   );

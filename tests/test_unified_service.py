@@ -5,10 +5,9 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from session_library import SessionLibrary
-from unified_service import AppCore, make_server, AppError
+from unified_service import AppCore, make_server
 
 
 class UnifiedServiceTests(unittest.TestCase):
@@ -99,7 +98,7 @@ class UnifiedServiceTests(unittest.TestCase):
         self.assertEqual(status,201)
         self.assertEqual(data["session"]["id"],"new-real")
         self.assertEqual(data["session"]["status"],"draft")
-        status,_,again=self.payload("POST","/api/session/create",{"id":"new-real"})
+        status,_,_again=self.payload("POST","/api/session/create",{"id":"new-real"})
         self.assertEqual(status,409)
         self.assertTrue((self.projects/"new-real"/"Config.toml").is_file())
 
@@ -126,18 +125,34 @@ class UnifiedServiceTests(unittest.TestCase):
         self.assertFalse((self.real/"workflow.lock").exists())
 
     def test_source_files_can_be_uploaded_only_with_real_recording_checks(self):
-        status,*_=self.request("POST","/api/upload?id=demo-test&role=cam01_trial",
+        status,_,data=self.payload("POST","/api/upload?id=demo-test&role=cam01_board",
                                 body=b"fakevideo",headers={"Content-Type":"video/mp4",
                                                            "X-KineLab-Confirm":"yes"})
         self.assertEqual(status,409)
-        status,*_=self.request("POST","/api/upload?id=real-test&role=../../escape",
+        self.assertIn("SESSION_LOCKED: only unregistered real sessions can take new footage",data["error"])
+        self.assertFalse((self.demo/"raw"/"cam01_board.mp4").exists())
+        status,_,data=self.payload("POST","/api/upload?id=real-test&role=../../escape",
                                 body=b"fakevideo",headers={"Content-Type":"video/mp4",
                                                            "X-KineLab-Confirm":"yes"})
         self.assertIn(status,(400,409))
+        self.assertEqual((status,data["error"]),(400,"Only three phone MP4 roles can be imported"))
         self.assertFalse((self.real/"raw"/"cam01_trial.mp4").exists())
-        status,*_=self.request("POST","/api/upload?id=real-test&role=cam01_trial",
+        status,_,data=self.payload("POST","/api/upload?id=real-test&role=cam01_board",
                                 body=b"garbage",headers={"Content-Type":"video/mp4"})
         self.assertIn(status,(400,409))
+        self.assertEqual((status,data["error"]),(409,"Confirm importing local phone MP4"))
+        self.assertFalse((self.real/"raw"/"cam01_board.mp4").exists())
+        self.assertEqual(list((self.real/"raw").glob("*.incoming.mp4")),[])
+
+    def test_participant_trial_upload_refused_before_pending_write(self):
+        for headers in ({"Content-Type":"video/mp4","X-KineLab-Confirm":"yes"},{"Content-Type":"video/mp4"}):
+            with self.subTest(headers=headers):
+                status,_,data=self.payload("POST","/api/upload?id=real-test&role=cam01_trial",
+                                           body=b"generated-not-participant-footage",headers=headers)
+                self.assertEqual(status,409)
+                self.assertTrue(data["error"].startswith("PARTICIPANT_RECORDING_BLOCKED: "))
+        self.assertFalse((self.real/"raw"/"cam01_trial.mp4").exists())
+        self.assertEqual(list((self.real/"raw").glob("*.incoming.mp4")),[])
 
     def test_locks_and_samples_cannot_be_rewritten_from_report_route(self):
         (self.real/"run.lock").write_text("123")

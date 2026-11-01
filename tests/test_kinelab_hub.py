@@ -1,10 +1,10 @@
 """One-desktop-icon KineLab hub must preserve and launch each original shortcut."""
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from kinelab_hub import HUB_ENTRIES, resolve_shortcut, launch_shortcut
+from kinelab_hub import HUB_ENTRIES, launch_shortcut, resolve_shortcut
 
 
 class HubTests(unittest.TestCase):
@@ -46,7 +46,9 @@ class HubTests(unittest.TestCase):
 
     def test_symlinked_shortcut_or_archive_escape_is_rejected(self):
         example=HUB_ENTRIES[0]
-        outside=Path(self.temp.name).parent / (example["key"] + "-outside-placeholder.lnk")
+        outside_temp = tempfile.TemporaryDirectory(prefix="kinelab-hub-outside-")
+        self.addCleanup(outside_temp.cleanup)
+        outside=Path(outside_temp.name) / (example["key"] + "-outside-placeholder.lnk")
         outside.write_bytes(b"test only")
         try:
             (self.archive / example["filename"]).symlink_to(outside)

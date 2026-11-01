@@ -33,16 +33,18 @@ After provisioning those dependencies and synthetic/test fixtures:
 6. Vite produces an approximately 943 kB minified 3D/live module; optimize code splitting and mobile GPU performance with measured budgets.
 7. Source includes tracked example portfolio assets (design reference material). Use only authorized, non-PHI fixtures. OneDrive sync may back up the Desktop handoff depending on user settings.
 
-## Test and packaging commands
+## Test and packaging commands (superseded 2026-10-29)
+The results above are historical baseline evidence. Current packaging requires a frontend-input capture before a new build and explicit unused package destinations. Do not rerun the former no-argument builder or Desktop handoff command against the preserved M1 archive. See `PRODUCTION_READINESS_HANDOFF.md` for the current contract; final candidate and clean-machine acceptance remain pending.
 ```powershell
 Set-Location 'C:\Users\soren\Documents\Projects\KineLab-PT-Production-Agent-Workspace'
+$env:PYTHONUTF8='1'
 npm --prefix viewer test
-npm --prefix viewer run build:cloud
-npm --prefix viewer run build
-& '.\.venv\Scripts\python.exe' -m unittest discover -s tests
-& '.\.venv\Scripts\python.exe' tools\build_offline_distribution.py
-# Then, once, create desktop ZIPs with checksum and manifest verification:
-& '.\.venv\Scripts\python.exe' tools\package_agent_handoff.py --desktop 'C:\Users\soren\OneDrive\Desktop'
+& '.\.venv\Scripts\python.exe' -X utf8 -B -m unittest discover -s tests
+# Replace review-01 with a fresh run name; keep frontend sources stable between steps:
+& '.\.venv\Scripts\python.exe' -X utf8 -B tools\build_offline_distribution.py --capture-frontend-inputs dist\candidate-inputs-review-01.json
+npm --prefix viewer run build -- --outDir ../dist/candidate-ui-review-01
+& '.\.venv\Scripts\python.exe' -X utf8 -B tools\build_offline_distribution.py --out dist\KineLabPT-candidate-review-01 --frontend-dist dist\candidate-ui-review-01 --frontend-inputs dist\candidate-inputs-review-01.json
+npm --prefix viewer run build:cloud -- --outDir ../dist/candidate-cloud-review-01
 ```
 
 This document is reproducibility evidence from one Windows workstation, not a clean-room clinical safety certification.
